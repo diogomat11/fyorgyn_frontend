@@ -17,11 +17,18 @@ import WorkerList from '../components/WorkerList';
 export default function Importacoes() {
   const [loading, setLoading] = useState(false);
   const username = localStorage.getItem('username') || 'Usuário';
+  // Convenio State
+  const [convenios, setConvenios] = useState([]);
+  const [selectedConvenio, setSelectedConvenio] = useState('');
 
   // Job Creation State
   const [importType, setImportType] = useState('single');
   const [carteirinhas, setCarteirinhas] = useState([]);
   const [selectedCarteirinhas, setSelectedCarteirinhas] = useState([]);
+
+  // Custom job parameters
+  const [importRotina, setImportRotina] = useState('');
+  const [targetGuiasStr, setTargetGuiasStr] = useState('');
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
@@ -39,6 +46,9 @@ export default function Importacoes() {
 
   useEffect(() => {
     fetchCarteirinhas();
+  }, [selectedConvenio]);
+
+  useEffect(() => {
     fetchStats();
   }, []);
 
@@ -49,7 +59,7 @@ export default function Importacoes() {
       fetchStats();
     }, 5000); // Poll for updates
     return () => clearInterval(interval);
-  }, [page, pageSize, filters]);
+  }, [page, pageSize, filters, selectedConvenio]);
 
   const [stats, setStats] = useState(null);
 
@@ -62,10 +72,40 @@ export default function Importacoes() {
 
   const fetchCarteirinhas = async () => {
     try {
-      const res = await api.get('/carteirinhas/?limit=1000');
+      const params = { limit: 1000 };
+      if (selectedConvenio) params.id_convenio = parseInt(selectedConvenio);
+      const res = await api.get('/carteirinhas/', { params });
       setCarteirinhas(res.data.data || res.data);
     } catch (e) { console.error(e); }
   };
+
+  const fetchConvenios = async () => {
+    try {
+      const res = await api.get('/convenios/');
+      setConvenios(res.data);
+      if (res.data.length > 0) setSelectedConvenio(res.data[0].id_convenio.toString());
+    } catch (e) { console.error("Error fetching convenios", e); }
+  };
+
+  // Derive dynamic operacoes based on selectedConvenio
+  const currentConvenioObj = convenios.find(c => c.id_convenio.toString() === selectedConvenio);
+  const currentOperacoes = currentConvenioObj?.operacoes || [];
+
+  useEffect(() => {
+    // Reset or auto-select routine when convenio changes
+    // Default to '1' (Consulta) if available, fallback to first
+    if (currentOperacoes.length > 1) {
+      setImportRotina(currentOperacoes[1].valor);
+    } else if (currentOperacoes.length > 0) {
+      setImportRotina(currentOperacoes[0].valor);
+    } else {
+      setImportRotina('');
+    }
+  }, [selectedConvenio, convenios]);
+
+  useEffect(() => {
+    fetchConvenios();
+  }, []);
 
   const fetchJobs = async () => {
     try {
@@ -77,6 +117,7 @@ export default function Importacoes() {
       if (filters.status) params.status = filters.status;
       if (filters.created_at_start) params.created_at_start = filters.created_at_start;
       if (filters.created_at_end) params.created_at_end = filters.created_at_end;
+      if (selectedConvenio) params.id_convenio = parseInt(selectedConvenio);
 
       const res = await api.get('/jobs/', { params });
 
@@ -114,6 +155,18 @@ export default function Importacoes() {
     return sortableItems;
   }, [jobs, sortConfig]);
 
+  const formatParamsSafely = (paramsStr) => {
+    if (!paramsStr) return '-';
+    try {
+      const parsed = typeof paramsStr === 'string' ? JSON.parse(paramsStr) : paramsStr;
+      if (parsed?.guias) return Array.isArray(parsed.guias) ? parsed.guias.join(', ') : parsed.guias;
+      if (parsed?.guia) return parsed.guia;
+      return typeof parsed === 'object' ? JSON.stringify(parsed) : paramsStr;
+    } catch (e) {
+      return String(paramsStr);
+    }
+  };
+
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
@@ -124,8 +177,24 @@ export default function Importacoes() {
 
     if (importType === 'all' && !confirm("Deseja processar TODAS as carteirinhas?")) return;
 
+    if (!selectedConvenio) {
+      alert("Por favor, selecione para qual Convênio este job será enviado.");
+      return;
+    }
+
     try {
       let payload = {};
+
+      // Build Params String for OP2 Captura
+      let finalParams = null;
+      let finalRotina = importRotina || '1'; // Default to Consulta if empty
+
+      if (finalRotina === '2' || finalRotina === 'captura') {
+        if (targetGuiasStr.trim()) {
+          const guiasArray = targetGuiasStr.split(',').map(g => g.trim()).filter(g => g);
+          finalParams = JSON.stringify({ guias: guiasArray });
+        }
+      }
 
       if (importType === 'temp') {
         const cartInput = document.getElementById('temp-carteirinha').value;
@@ -143,6 +212,9 @@ export default function Importacoes() {
 
         payload = {
           type: 'temp',
+          rotina: finalRotina,
+          params: finalParams,
+          id_convenio: selectedConvenio ? parseInt(selectedConvenio) : undefined,
           temp_patient: {
             carteirinha: cartInput,
             paciente: pacInput
@@ -151,6 +223,9 @@ export default function Importacoes() {
       } else {
         payload = {
           type: typeMap[importType],
+          rotina: finalRotina,
+          params: finalParams,
+          id_convenio: selectedConvenio ? parseInt(selectedConvenio) : undefined,
           carteirinha_ids: (importType === 'all') ? [] : selectedCarteirinhas
         };
       }
@@ -158,6 +233,7 @@ export default function Importacoes() {
       await api.post('/jobs/', payload);
       alert("Solicitações criadas com sucesso!");
       setSelectedCarteirinhas([]);
+      setTargetGuiasStr('');
       fetchJobs();
 
       if (importType === 'temp') {
@@ -189,13 +265,13 @@ export default function Importacoes() {
     }
   };
 
-  const getStatusBadge = (status) => {
-    switch (status) {
+  const getStatusBadge = (job) => {
+    switch (job.status) {
       case 'success': return <Badge variant="success">Sucesso</Badge>;
-      case 'error': return <Badge variant="error">Erro</Badge>;
+      case 'error': return <span title={job.error_message || 'Erro Desconhecido'} className="cursor-help"><Badge variant="error">Erro</Badge></span>;
       case 'pending': return <Badge variant="warning">Pendente</Badge>;
       case 'processing': return <Badge variant="info">Processando</Badge>;
-      default: return <Badge>{status}</Badge>;
+      default: return <Badge>{job.status}</Badge>;
     }
   };
 
@@ -284,6 +360,46 @@ export default function Importacoes() {
               <option value="temp">Paciente Temporário</option>
             </Select>
           </div>
+
+          <div className="md:col-span-3">
+            <label className="block text-sm font-medium text-text-secondary mb-1">Convênio</label>
+            <Select
+              value={selectedConvenio}
+              onChange={e => setSelectedConvenio(e.target.value)}
+            >
+              {convenios.length === 0 && <option value="">Sem Convênios</option>}
+              {convenios.map(c => (
+                <option key={c.id_convenio} value={c.id_convenio}>
+                  {c.nome} (ID: {c.id_convenio})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="md:col-span-3">
+            <label className="block text-sm font-medium text-text-secondary mb-1">Rotina / Operação</label>
+            <Select
+              value={importRotina}
+              onChange={e => setImportRotina(e.target.value)}
+              disabled={currentOperacoes.length === 0}
+            >
+              {currentOperacoes.length === 0 && <option value="">Sem Rotinas</option>}
+              {currentOperacoes.map(op => (
+                <option key={op.id} value={op.valor}>{op.descricao}</option>
+              ))}
+            </Select>
+          </div>
+          {(importRotina === '2' || importRotina === 'captura') && (
+            <div className="md:col-span-6">
+              <label className="block text-sm font-medium text-text-secondary mb-1">Guias Alvo (Separado por vírgula)</label>
+              <Input
+                type="text"
+                placeholder="Ex: 15089518, 15089519"
+                value={targetGuiasStr}
+                onChange={e => setTargetGuiasStr(e.target.value)}
+              />
+            </div>
+          )}
 
           {importType === 'temp' ? (
             <>
@@ -432,6 +548,8 @@ export default function Importacoes() {
               <tr>
                 <th className="px-6 py-3 text-left cursor-pointer hover:text-primary" onClick={() => handleSort('id')}>ID</th>
                 <th className="px-6 py-3 text-left cursor-pointer hover:text-primary" onClick={() => handleSort('created_at')}>Data Criação</th>
+                <th className="px-6 py-3 text-left cursor-pointer hover:text-primary" onClick={() => handleSort('rotina')}>Rotina</th>
+                <th className="px-6 py-3 text-left">Params (Guias)</th>
                 <th className="px-6 py-3 text-left cursor-pointer hover:text-primary" onClick={() => handleSort('status')}>Status</th>
                 <th className="px-6 py-3 text-left cursor-pointer hover:text-primary" onClick={() => handleSort('attempts')}>Tentativas</th>
                 <th className="px-6 py-3 text-left">Tempo Proc.</th>
@@ -443,8 +561,12 @@ export default function Importacoes() {
                 <tr key={job.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">#{job.id}</td>
                   <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDateTime(job.created_at)}</td>
+                  <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{job.rotina || 'Padrão'}</td>
+                  <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap truncate max-w-[150px]" title={job.params}>
+                    {formatParamsSafely(job.params)}
+                  </td>
                   <td className="px-6 py-4 text-sm">
-                    {getStatusBadge(job.status)}
+                    {getStatusBadge(job)}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">{job.attempts}</td>
                   <td className="px-6 py-4 text-sm text-text-secondary font-mono">{calculateDuration(job.created_at, job.updated_at)}</td>
@@ -464,7 +586,7 @@ export default function Importacoes() {
               ))}
               {sortedJobs.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="px-6 py-10 text-center text-text-secondary">
+                  <td colSpan="8" className="px-6 py-10 text-center text-text-secondary">
                     Nenhum job encontrado com os filtros atuais.
                   </td>
                 </tr>
