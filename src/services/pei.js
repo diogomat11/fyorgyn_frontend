@@ -13,8 +13,15 @@ export async function listPei(params = {}) {
     return res.data;
 }
 
-export async function getPeiStats() {
-    const res = await api.get('/pei/dashboard');
+export async function getPeiStats(params = {}) {
+    // Filter out empty strings to avoid 422 errors
+    const cleanParams = {};
+    Object.keys(params).forEach(key => {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+            cleanParams[key] = params[key];
+        }
+    });
+    const res = await api.get('/pei/dashboard', { params: cleanParams });
     return res.data;
 }
 

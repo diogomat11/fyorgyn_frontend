@@ -8,7 +8,7 @@ import SearchableSelect from '../components/SearchableSelect';
 // Design System
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
-import { Input } from '../components/ui/Input';
+import { Input, Select } from '../components/ui/Input';
 
 // Loading Overlay Component
 const ProcessingModal = ({ isOpen }) => {
@@ -40,14 +40,24 @@ export default function BaseGuias() {
     const [filters, setFilters] = useState({
         created_at_start: '',
         created_at_end: '',
-        carteirinha_id: ''
+        carteirinha_id: '',
+        id_convenio: ''
     });
+
+    const [convenios, setConvenios] = useState([]);
 
     const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
 
     useEffect(() => {
         api.get('/carteirinhas/?limit=1000').then(res => {
             setCarteirinhas(res.data.data || res.data);
+        }).catch(console.error);
+
+        api.get('/convenios/').then(res => {
+            setConvenios(res.data);
+            if (res.data.length > 0) {
+                setFilters(f => ({ ...f, id_convenio: res.data[0].id_convenio.toString() }));
+            }
         }).catch(console.error);
     }, []);
 
@@ -68,6 +78,9 @@ export default function BaseGuias() {
             if (filters.created_at_end) params.created_at_end = filters.created_at_end;
             if (filters.carteirinha_id && filters.carteirinha_id !== "") {
                 params.carteirinha_id = parseInt(filters.carteirinha_id);
+            }
+            if (filters.id_convenio) {
+                params.id_convenio = parseInt(filters.id_convenio);
             }
 
             const res = await api.get('/guias/', { params });
@@ -115,7 +128,8 @@ export default function BaseGuias() {
         setFilters({
             created_at_start: '',
             created_at_end: '',
-            carteirinha_id: ''
+            carteirinha_id: '',
+            id_convenio: ''
         });
         setPage(1);
     };
@@ -127,6 +141,7 @@ export default function BaseGuias() {
             if (filters.created_at_start) params.created_at_start = filters.created_at_start;
             if (filters.created_at_end) params.created_at_end = filters.created_at_end;
             if (filters.carteirinha_id) params.carteirinha_id = filters.carteirinha_id;
+            if (filters.id_convenio) params.id_convenio = filters.id_convenio;
 
             const response = await api.get('/guias/export', {
                 params,
@@ -152,7 +167,22 @@ export default function BaseGuias() {
             <h1 className="text-2xl font-bold text-text-primary">Base Guias Unimed</h1>
 
             <Card noPadding>
-                <div className="p-4 border-b border-border flex flex-col md:flex-row gap-4 items-end bg-surface/30">
+                <div className="p-4 border-b border-border flex flex-col md:flex-row gap-4 items-end bg-surface/30 flex-wrap">
+                    <div className="flex-1 w-full md:w-auto min-w-[200px]">
+                        <label className="block text-xs font-semibold text-text-secondary mb-1">Convênio</label>
+                        <Select
+                            value={filters.id_convenio}
+                            onChange={(e) => {
+                                setFilters({ ...filters, id_convenio: e.target.value });
+                                setPage(1);
+                            }}
+                        >
+                            <option value="">Todos os Convênios</option>
+                            {convenios.map(c => (
+                                <option key={c.id_convenio} value={c.id_convenio}>{c.nome}</option>
+                            ))}
+                        </Select>
+                    </div>
                     <div className="flex-1 w-full md:w-auto min-w-[250px]">
                         <label className="block text-xs font-semibold text-text-secondary mb-1">Paciente / Carteirinha</label>
                         <SearchableSelect

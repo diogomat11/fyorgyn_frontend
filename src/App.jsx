@@ -6,7 +6,9 @@ import Logs from './pages/Logs';
 import Login from './pages/Login';
 import BaseGuias from './pages/BaseGuias';
 import GestaoPei from './pages/GestaoPei';
+import Agendamentos from './pages/Agendamentos';
 import Manual from './pages/Manual';
+import Prioridades from './pages/Prioridades';
 import MainLayout from './layouts/MainLayout';
 
 function PrivateRoute({ children }) {
@@ -50,6 +52,12 @@ export default function App() {
           </PrivateRoute>
         } />
 
+        <Route path="/agendamentos" element={
+          <PrivateRoute>
+            <Agendamentos />
+          </PrivateRoute>
+        } />
+
         <Route path="/manual" element={
           <PrivateRoute>
             <Manual />
@@ -59,6 +67,12 @@ export default function App() {
         <Route path="/logs" element={
           <PrivateRoute>
             <Logs />
+          </PrivateRoute>
+        } />
+
+        <Route path="/prioridades" element={
+          <PrivateRoute>
+            <Prioridades />
           </PrivateRoute>
         } />
       </Routes>

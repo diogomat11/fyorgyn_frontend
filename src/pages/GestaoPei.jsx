@@ -56,19 +56,38 @@ export default function GestaoPei() {
         status: '',
         vencimento_filter: '',
         validade_start: '',
-        validade_end: ''
+        validade_end: '',
+        id_convenio: ''
     });
+
+    const [convenios, setConvenios] = useState([]);
+
+    useEffect(() => {
+        const fetchConvenios = async () => {
+            try {
+                // Must import api inside if not available, wait, we don't have api here? Let's import it or use a service.
+                // Actually pei.js doesn't export api. Let's just import api from '../services/api';
+                const { default: api } = await import('../services/api');
+                const res = await api.get('/convenios/');
+                setConvenios(res.data);
+                if (res.data.length > 0) {
+                    setFilters(f => ({ ...f, id_convenio: res.data[0].id_convenio.toString() }));
+                }
+            } catch (e) { console.error("Error fetching convenios", e); }
+        };
+        fetchConvenios();
+    }, []);
 
     const [editingItem, setEditingItem] = useState(null);
     const [editValue, setEditValue] = useState('');
     const [isExporting, setIsExporting] = useState(false);
 
-    useEffect(() => { loadStats(); }, []);
+    useEffect(() => { loadStats(); }, [filters]);
     useEffect(() => { loadData(); }, [page, pageSize, filters]);
 
     const loadStats = async () => {
         try {
-            const res = await getPeiStats();
+            const res = await getPeiStats({ id_convenio: filters.id_convenio || undefined });
             setStats(res);
         } catch (error) { console.error(error); }
     };
@@ -136,6 +155,18 @@ export default function GestaoPei() {
             <Card noPadding>
                 {/* Filters */}
                 <div className="p-4 border-b border-border flex flex-wrap gap-4 items-end bg-surface/30">
+                    <div className="w-full md:w-64">
+                        <label className="block text-xs font-semibold text-text-secondary mb-1">Convênio</label>
+                        <Select
+                            value={filters.id_convenio}
+                            onChange={(e) => handleFilterChange('id_convenio', e.target.value)}
+                        >
+                            <option value="">Todos os Convênios</option>
+                            {convenios.map(c => (
+                                <option key={c.id_convenio} value={c.id_convenio}>{c.nome}</option>
+                            ))}
+                        </Select>
+                    </div>
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-xs font-semibold text-text-secondary mb-1">Buscar</label>
                         <Input

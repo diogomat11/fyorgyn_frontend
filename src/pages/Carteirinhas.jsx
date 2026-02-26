@@ -27,8 +27,24 @@ export default function Carteirinhas() {
         search: '',
         status: '',
         id_pagamento: '',
-        paciente: ''
+        paciente: '',
+        id_convenio: ''
     });
+
+    const [convenios, setConvenios] = useState([]);
+
+    useEffect(() => {
+        const fetchConvenios = async () => {
+            try {
+                const res = await api.get('/convenios/');
+                setConvenios(res.data);
+                if (res.data.length > 0) {
+                    setFilters(f => ({ ...f, id_convenio: res.data[0].id_convenio.toString() }));
+                }
+            } catch (e) { console.error("Error fetching convenios", e); }
+        };
+        fetchConvenios();
+    }, []);
 
     const limit = 10;
     const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'asc' });
@@ -41,7 +57,8 @@ export default function Carteirinhas() {
         paciente: '',
         id_paciente: '',
         id_pagamento: '',
-        status: 'ativo'
+        status: 'ativo',
+        id_convenio: ''
     });
 
     const fetchCarteirinhas = async () => {
@@ -54,7 +71,8 @@ export default function Carteirinhas() {
                 search: filters.search,
                 status: filters.status,
                 id_pagamento: filters.id_pagamento,
-                paciente: filters.paciente
+                paciente: filters.paciente,
+                id_convenio: filters.id_convenio || undefined
             };
 
             const res = await api.get('/carteirinhas/', { params });
@@ -98,6 +116,9 @@ export default function Carteirinhas() {
 
         try {
             setLoading(true);
+            if (filters.id_convenio) {
+                formData.append('id_convenio', filters.id_convenio);
+            }
             await api.post('/carteirinhas/upload', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
@@ -126,12 +147,13 @@ export default function Carteirinhas() {
 
         try {
             setLoading(true);
-            await api.post('/carteirinhas', {
+            await api.post('/carteirinhas/', {
                 carteirinha: newCarteirinha.carteirinha,
                 paciente: newCarteirinha.paciente,
                 id_paciente: newCarteirinha.id_paciente ? parseInt(newCarteirinha.id_paciente) : null,
                 id_pagamento: newCarteirinha.id_pagamento ? parseInt(newCarteirinha.id_pagamento) : null,
-                status: newCarteirinha.status
+                status: newCarteirinha.status,
+                id_convenio: newCarteirinha.id_convenio || (filters.id_convenio ? parseInt(filters.id_convenio) : undefined)
             });
             alert("Carteirinha criada com sucesso!");
             setShowCreateForm(false);
@@ -210,6 +232,19 @@ export default function Carteirinhas() {
                                     />
                                 </div>
                                 <div>
+                                    <label className="block text-xs font-semibold text-text-secondary mb-1">Convênio *</label>
+                                    <Select
+                                        value={newCarteirinha.id_convenio || filters.id_convenio}
+                                        onChange={(e) => setNewCarteirinha({ ...newCarteirinha, id_convenio: e.target.value })}
+                                        required
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {convenios.map(c => (
+                                            <option key={c.id_convenio} value={c.id_convenio}>{c.nome}</option>
+                                        ))}
+                                    </Select>
+                                </div>
+                                <div>
                                     <label className="block text-xs font-semibold text-text-secondary mb-1">Paciente</label>
                                     <Input
                                         value={newCarteirinha.paciente}
@@ -243,6 +278,17 @@ export default function Carteirinhas() {
 
                 {/* Filters */}
                 <div className="flex flex-col md:flex-row gap-4 mb-6">
+                    <div className="w-full md:w-64">
+                        <Select
+                            value={filters.id_convenio}
+                            onChange={(e) => { setFilters({ ...filters, id_convenio: e.target.value }); setPage(1); }}
+                        >
+                            <option value="">Todos os Convênios</option>
+                            {convenios.map(c => (
+                                <option key={c.id_convenio} value={c.id_convenio}>{c.nome}</option>
+                            ))}
+                        </Select>
+                    </div>
                     <div className="flex-1 relative">
                         <Input
                             placeholder="Busca Geral..."

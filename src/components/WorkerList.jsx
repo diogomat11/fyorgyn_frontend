@@ -27,13 +27,12 @@ export default function WorkerList({ compact = false }) {
     }, []);
 
     const handleRestart = async (id) => {
-        if (!confirm("Solicitar reinício deste worker?")) return;
         try {
+            // Optimistic update
+            setWorkers(prev => prev.map(w => w.id === id ? { ...w, command: 'restart' } : w));
             await api.post(`/workers/${id}/restart`);
-            alert("Comando de reinício enviado.");
-            fetchWorkers();
         } catch (e) {
-            alert("Erro ao enviar comando: " + e.message);
+            console.error("Erro ao enviar comando: " + e.message);
         }
     };
 
@@ -49,7 +48,7 @@ export default function WorkerList({ compact = false }) {
                             )}
                         </div>
                         <div className="h-5 w-px bg-border"></div>
-                        <WorkerStatusBadge status={w.status} lastHeartbeat={w.last_heartbeat} />
+                        <WorkerStatusBadge status={w.command === 'restart' ? 'restarting' : w.status} lastHeartbeat={w.last_heartbeat} />
                         <div className="h-5 w-px bg-border"></div>
                         <button
                             onClick={() => handleRestart(w.id)}
@@ -77,9 +76,9 @@ export default function WorkerList({ compact = false }) {
                     <div key={w.id} className="bg-background rounded-lg p-3 border border-border flex justify-between items-center">
                         <div>
                             <div className="font-bold text-text-primary mb-1">{w.hostname}</div>
-                            <WorkerStatusBadge status={w.status} lastHeartbeat={w.last_heartbeat} />
+                            <WorkerStatusBadge status={w.command === 'restart' ? 'restarting' : w.status} lastHeartbeat={w.last_heartbeat} />
                             <div className="text-xs text-text-secondary mt-1">
-                                Último heartbeat: {new Date(w.last_heartbeat).toLocaleTimeString()}
+                                Último heartbeat: {new Date(w.last_heartbeat.endsWith('Z') ? w.last_heartbeat : `${w.last_heartbeat}Z`).toLocaleTimeString()}
                             </div>
                             {w.current_job_id && (
                                 <div className="text-xs text-blue-400 mt-1">

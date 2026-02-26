@@ -22,7 +22,7 @@ export default function Logs() {
     setLoading(true);
     try {
       const skip = (page - 1) * pageSize;
-      const res = await api.get('/api/logs/', { params: { skip, limit: pageSize } });
+      const res = await api.get('/logs/', { params: { skip, limit: pageSize } });
       if (res.data.data) {
         setLogs(res.data.data);
         setTotalItems(res.data.total);

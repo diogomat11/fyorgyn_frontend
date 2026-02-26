@@ -1,20 +1,23 @@
 import React from 'react';
 import Badge from './ui/Badge';
-import { Activity, Power, AlertTriangle, Cpu } from 'lucide-react';
+import { Activity, Power, AlertTriangle, Cpu, RefreshCw } from 'lucide-react';
 
 const WorkerStatusBadge = ({ status, lastHeartbeat }) => {
     const getStatusConfig = () => {
         // Check if offline based on time (if not handled by parent)
         const now = new Date();
-        const last = new Date(lastHeartbeat);
+        const lastStr = lastHeartbeat.endsWith('Z') ? lastHeartbeat : `${lastHeartbeat}Z`;
+        const last = new Date(lastStr);
         const diff = (now - last) / 1000; // seconds
 
         // If no heartbeat for > 60s, assume offline regardless of db status
-        if (diff > 60) {
+        if (diff > 60 || diff < 0) {
             return { variant: 'error', icon: Power, label: 'Offline', text: 'text-error' };
         }
 
         switch (status) {
+            case 'restarting':
+                return { variant: 'warning', icon: RefreshCw, label: 'Reiniciando...', text: 'text-amber-500' };
             case 'idle':
                 return { variant: 'success', icon: Activity, label: 'Online/Ocioso', text: 'text-success' };
             case 'processing':
