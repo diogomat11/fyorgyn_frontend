@@ -1,14 +1,144 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
-import { Trash2, Upload, Plus, Edit, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { Trash2, Upload, Plus, Edit, ChevronLeft, ChevronRight, Search, X, Check, X as XIcon } from 'lucide-react';
 import EditCarteirinhaModal from '../components/EditCarteirinhaModal';
-import { maskCarteirinha, validateCarteirinha } from '../utils/formatters';
+import { maskCarteirinha, validateCarteirinha, maskCodigoBeneficiario, maskSulamerica, maskNumerics } from '../utils/formatters';
+import { motion, AnimatePresence } from 'motion/react';
 
 // Design System
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import { Input, Select } from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
+import CheckBox from '../components/ui/CheckBox';
+
+// ── StatusToggle ──────────────────────────────────────────────────────────────
+// Ativo  → CheckBox SVG animado (idêntico ao de Prioridades), size=20, verde
+// Inativo → XIcon vermelho lucide, size=20
+// Clique abre confirm → PUT /carteirinhas/:id { status }
+// Tooltip com texto aparece ao hover após 350ms
+function StatusToggle({ carteirinha, onToggled }) {
+    const [localStatus, setLocalStatus] = useState(carteirinha.status);
+    const [saving, setSaving] = useState(false);
+    const [showTooltip, setShowTooltip] = useState(false);
+    const tooltipTimer = useRef(null);
+
+    useEffect(() => { setLocalStatus(carteirinha.status); }, [carteirinha.status]);
+
+    const isAtivo = localStatus === 'ativo';
+    const tooltipText = isAtivo ? 'Ativo — clique para inativar' : 'Inativo — clique para ativar';
+
+    const handleClick = async () => {
+        if (saving) return;
+        const novoStatus = isAtivo ? 'inativo' : 'ativo';
+        const nome = carteirinha.paciente || carteirinha.carteirinha;
+        const confirmed = window.confirm(
+            isAtivo
+                ? `Deseja INATIVAR a carteirinha de "${nome}"?`
+                : `Deseja ATIVAR a carteirinha de "${nome}"?`
+        );
+        if (!confirmed) return;
+
+        setSaving(true);
+        try {
+            await api.put(`/carteirinhas/${carteirinha.id}`, { status: novoStatus });
+            setLocalStatus(novoStatus);
+            if (onToggled) onToggled();
+        } catch (e) {
+            alert('Erro ao alterar status: ' + (e.response?.data?.detail || e.message));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const onEnter = () => { tooltipTimer.current = setTimeout(() => setShowTooltip(true), 350); };
+    const onLeave = () => { clearTimeout(tooltipTimer.current); setShowTooltip(false); };
+
+    return (
+        <div className="relative inline-flex items-center justify-center">
+            {/* Área clicável — sem caixa, apenas o ícone */}
+            <div
+                onClick={handleClick}
+                onMouseEnter={onEnter}
+                onMouseLeave={onLeave}
+                aria-label={tooltipText}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') handleClick(); }}
+                className={`
+                    inline-flex items-center justify-center select-none
+                    transition-transform duration-150
+                    ${saving ? 'opacity-40 cursor-wait' : 'cursor-pointer hover:scale-125 active:scale-95'}
+                `}
+            >
+                <AnimatePresence mode="wait" initial={false}>
+                    {isAtivo ? (
+                        /* CheckBox SVG animado — idêntico ao de Prioridades */
+                        <motion.div
+                            key="ativo"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.5 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <CheckBox
+                                checked={true}
+                                onClick={() => {}}
+                                size={20}
+                                color="#22c55e"
+                                duration={0.4}
+                            />
+                        </motion.div>
+                    ) : (
+                        /* X vermelho */
+                        <motion.div
+                            key="inativo"
+                            initial={{ opacity: 0, scale: 0.5, rotate: 45 }}
+                            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                            exit={{ opacity: 0, scale: 0.5, rotate: -45 }}
+                            transition={{ duration: 0.22, ease: 'backOut' }}
+                            className="flex items-center"
+                        >
+                            <XIcon
+                                size={20}
+                                className="text-red-400 drop-shadow-[0_0_6px_rgba(248,113,113,0.7)]"
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+
+            {/* Tooltip */}
+            <AnimatePresence>
+                {showTooltip && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.9 }}
+                        transition={{ duration: 0.13 }}
+                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none"
+                    >
+                        <div className={`
+                            px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap shadow-lg border
+                            ${isAtivo
+                                ? 'bg-slate-900 border-emerald-500/40 text-emerald-300'
+                                : 'bg-slate-900 border-red-500/40 text-red-300'
+                            }
+                        `}>
+                            {tooltipText}
+                        </div>
+                        <div className={`
+                            absolute top-full left-1/2 -translate-x-1/2 w-0 h-0
+                            border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent
+                            ${isAtivo ? 'border-t-emerald-500/40' : 'border-t-red-500/40'}
+                        `} />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
+
 
 export default function Carteirinhas() {
     const [carteirinhas, setCarteirinhas] = useState([]);
@@ -26,7 +156,7 @@ export default function Carteirinhas() {
     const [filters, setFilters] = useState({
         search: '',
         status: '',
-        id_pagamento: '',
+        codigo_beneficiario: '',
         paciente: '',
         id_convenio: ''
     });
@@ -56,10 +186,32 @@ export default function Carteirinhas() {
         carteirinha: '',
         paciente: '',
         id_paciente: '',
-        id_pagamento: '',
+        codigo_beneficiario: '',
         status: 'ativo',
         id_convenio: ''
     });
+
+    const isIpasgoSelected = (id) => {
+        if (!id || !convenios) return false;
+        const selected = convenios.find(c => c.id_convenio.toString() === id.toString());
+        return selected?.nome?.toLowerCase().includes('ipasgo');
+    };
+
+    const handleCarteirinhaFormat = (value, id_convenio) => {
+        if (!id_convenio || !convenios) return value;
+        const selected = convenios.find(c => c.id_convenio.toString() === id_convenio.toString());
+        if (!selected) return value;
+
+        const nome = selected.nome.toLowerCase();
+        if (nome.includes('unimed')) {
+            return maskCarteirinha(value);
+        } else if (nome.includes('sulamerica')) {
+            return maskSulamerica(value);
+        } else if (nome.includes('amil') || nome.includes('ipasgo')) {
+            return maskNumerics(value, selected.digitos_carteirinha || 9);
+        }
+        return maskNumerics(value, selected.digitos_carteirinha);
+    };
 
     const fetchCarteirinhas = async () => {
         setLoading(true);
@@ -70,7 +222,7 @@ export default function Carteirinhas() {
                 limit,
                 search: filters.search,
                 status: filters.status,
-                id_pagamento: filters.id_pagamento,
+                codigo_beneficiario: filters.codigo_beneficiario,
                 paciente: filters.paciente,
                 id_convenio: filters.id_convenio || undefined
             };
@@ -119,14 +271,20 @@ export default function Carteirinhas() {
             if (filters.id_convenio) {
                 formData.append('id_convenio', filters.id_convenio);
             }
-            await api.post('/carteirinhas/upload', formData, {
+            const res = await api.post('/carteirinhas/upload', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            alert("Upload realizado com sucesso!");
+
+            if (res.data.warnings && res.data.warnings.length > 0) {
+                alert("Upload parcialmente concluído!\nErros ignorados:\n" + res.data.warnings.slice(0, 10).join("\n") + (res.data.warnings.length > 10 ? "\n..." : ""));
+            } else {
+                alert("Upload realizado com sucesso!");
+            }
+
             setFile(null);
             setPage(1);
             fetchCarteirinhas();
-        } catch (e) { alert("Erro no upload: " + e.message); }
+        } catch (e) { alert("Erro no upload: " + (e.response?.data?.detail || e.message)); }
         finally { setLoading(false); }
     };
 
@@ -151,13 +309,13 @@ export default function Carteirinhas() {
                 carteirinha: newCarteirinha.carteirinha,
                 paciente: newCarteirinha.paciente,
                 id_paciente: newCarteirinha.id_paciente ? parseInt(newCarteirinha.id_paciente) : null,
-                id_pagamento: newCarteirinha.id_pagamento ? parseInt(newCarteirinha.id_pagamento) : null,
+                codigo_beneficiario: newCarteirinha.codigo_beneficiario ? newCarteirinha.codigo_beneficiario : null,
                 status: newCarteirinha.status,
                 id_convenio: newCarteirinha.id_convenio || (filters.id_convenio ? parseInt(filters.id_convenio) : undefined)
             });
             alert("Carteirinha criada com sucesso!");
             setShowCreateForm(false);
-            setNewCarteirinha({ carteirinha: '', paciente: '', id_paciente: '', id_pagamento: '', status: 'ativo' });
+            setNewCarteirinha({ carteirinha: '', paciente: '', id_paciente: '', codigo_beneficiario: '', status: 'ativo', id_convenio: '' });
             setPage(1);
             fetchCarteirinhas();
         } catch (e) {
@@ -225,10 +383,10 @@ export default function Carteirinhas() {
                                     <label className="block text-xs font-semibold text-text-secondary mb-1">Carteirinha *</label>
                                     <Input
                                         value={newCarteirinha.carteirinha}
-                                        onChange={(e) => setNewCarteirinha({ ...newCarteirinha, carteirinha: maskCarteirinha(e.target.value) })}
-                                        placeholder="0000.0000.000000.00-0"
+                                        onChange={(e) => setNewCarteirinha({ ...newCarteirinha, carteirinha: handleCarteirinhaFormat(e.target.value, newCarteirinha.id_convenio || filters.id_convenio) })}
+                                        placeholder="No da Carteira"
                                         required
-                                        maxLength={21}
+                                        maxLength={25}
                                     />
                                 </div>
                                 <div>
@@ -256,10 +414,12 @@ export default function Carteirinhas() {
                                     <label className="block text-xs font-semibold text-text-secondary mb-1">ID Paciente</label>
                                     <Input type="number" value={newCarteirinha.id_paciente} onChange={(e) => setNewCarteirinha({ ...newCarteirinha, id_paciente: e.target.value })} placeholder="123" />
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-text-secondary mb-1">ID Pagamento</label>
-                                    <Input type="number" value={newCarteirinha.id_pagamento} onChange={(e) => setNewCarteirinha({ ...newCarteirinha, id_pagamento: e.target.value })} placeholder="456" />
-                                </div>
+                                {isIpasgoSelected(newCarteirinha.id_convenio || filters.id_convenio) && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-text-secondary mb-1">Código do Paciente no Convênio *</label>
+                                        <Input type="text" value={newCarteirinha.codigo_beneficiario} onChange={(e) => setNewCarteirinha({ ...newCarteirinha, codigo_beneficiario: maskCodigoBeneficiario(e.target.value) })} placeholder="1180507-2" required />
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-xs font-semibold text-text-secondary mb-1">Status</label>
                                     <Select value={newCarteirinha.status} onChange={(e) => setNewCarteirinha({ ...newCarteirinha, status: e.target.value })}>
@@ -304,9 +464,9 @@ export default function Carteirinhas() {
                         className="w-full md:w-48"
                     />
                     <Input
-                        placeholder="ID Pagamento"
-                        value={filters.id_pagamento}
-                        onChange={(e) => { setFilters({ ...filters, id_pagamento: e.target.value }); setPage(1); }}
+                        placeholder="Cód. Convênio"
+                        value={filters.codigo_beneficiario}
+                        onChange={(e) => { setFilters({ ...filters, codigo_beneficiario: e.target.value }); setPage(1); }}
                         className="w-full md:w-32"
                     />
                     <div className="w-full md:w-40">
@@ -318,7 +478,7 @@ export default function Carteirinhas() {
                     </div>
                     <Button
                         variant="ghost"
-                        onClick={() => setFilters({ search: '', status: '', id_pagamento: '', paciente: '' })}
+                        onClick={() => setFilters({ search: '', status: '', codigo_beneficiario: '', paciente: '', id_convenio: '' })}
                         className="text-text-secondary hover:text-text-primary whitespace-nowrap"
                     >
                         Limpar
@@ -339,11 +499,11 @@ export default function Carteirinhas() {
                                 <th onClick={() => handleSort('paciente')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
                                     Paciente {sortConfig.key === 'paciente' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                 </th>
-                                <th onClick={() => handleSort('id_paciente')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
+                                <th onClick={() => handleSort('id_paciente')} className="px-6 py-3 text-left cursor-pointer hover:text-primary whitespace-nowrap">
                                     ID Paciente {sortConfig.key === 'id_paciente' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                 </th>
-                                <th onClick={() => handleSort('id_pagamento')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
-                                    ID Pagamento {sortConfig.key === 'id_pagamento' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+                                <th onClick={() => handleSort('codigo_beneficiario')} className="px-6 py-3 text-left cursor-pointer hover:text-primary whitespace-nowrap">
+                                    Cód. Paciente no Convênio {sortConfig.key === 'codigo_beneficiario' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                 </th>
                                 <th onClick={() => handleSort('status')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
                                     Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
@@ -358,9 +518,12 @@ export default function Carteirinhas() {
                                     <td className="px-6 py-4 text-sm text-text-secondary font-mono whitespace-nowrap">{c.carteirinha}</td>
                                     <td className="px-6 py-4 text-sm text-text-primary font-medium whitespace-nowrap">{c.paciente || '-'}</td>
                                     <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{c.id_paciente || '-'}</td>
-                                    <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{c.id_pagamento || '-'}</td>
+                                    <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{c.codigo_beneficiario || '-'}</td>
                                     <td className="px-6 py-4 text-sm">
-                                        <Badge variant={c.status === 'ativo' ? 'success' : 'default'}>{c.status || 'ativo'}</Badge>
+                                        <StatusToggle
+                                            carteirinha={c}
+                                            onToggled={fetchCarteirinhas}
+                                        />
                                     </td>
                                     <td className="px-6 py-4 text-sm flex gap-2">
                                         <Button size="sm" variant="ghost" onClick={() => setEditingItem(c)} className="h-8 w-8 p-0">
@@ -409,6 +572,7 @@ export default function Carteirinhas() {
             {editingItem && (
                 <EditCarteirinhaModal
                     carteirinha={editingItem}
+                    convenios={convenios}
                     onClose={() => setEditingItem(null)}
                     onSave={fetchCarteirinhas}
                 />

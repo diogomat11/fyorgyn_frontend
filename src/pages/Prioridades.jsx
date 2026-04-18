@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Save, X, RefreshCw, Zap, Server, Settings } from 'lucide-react';
 import api from '../services/api';
+import CheckBox from '../components/ui/CheckBox';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const ROTINAS = [
@@ -230,10 +231,13 @@ export default function Prioridades() {
                                                     </td>
                                                     <td style={tdS}><EscalationExample base={cur.base_priority} esc={cur.escalation_minutes || 10} /></td>
                                                     <td style={tdS}>
-                                                        <select value={cur.is_active} onChange={e => handleRuleEdit(rule.id, 'is_active', parseInt(e.target.value))} style={{ ...inpS, width: 90 }}>
-                                                            <option value={1}>✅ Ativo</option>
-                                                            <option value={0}>⏸ Inativo</option>
-                                                        </select>
+                                                        <CheckBox
+                                                            checked={!!cur.is_active}
+                                                            onClick={() => handleRuleEdit(rule.id, 'is_active', cur.is_active ? 0 : 1)}
+                                                            size={20}
+                                                            color="#22c55e"
+                                                            duration={0.4}
+                                                        />
                                                     </td>
                                                     <td style={tdS}>
                                                         <div style={{ display: 'flex', gap: 5 }}>
@@ -313,7 +317,16 @@ export default function Prioridades() {
                                                     <td style={tdS}>{cfg.id_convenio ? <span style={{ color: '#93c5fd' }}>{convLabel(cfg.id_convenio)}</span> : <span style={{ color: '#475569' }}>Qualquer</span>}</td>
                                                     <td style={tdS}>{cfg.rotina ? <span style={{ color: '#86efac' }}>{cfg.rotina}</span> : <span style={{ color: '#475569' }}>Qualquer</span>}</td>
                                                     <td style={tdS}><span style={{ background: '#1e3a2e', color: '#22c55e', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>+{cfg.preference_bonus}</span></td>
-                                                    <td style={tdS}>{cfg.is_active ? '✅' : '⏸'}</td>
+                                                    <td style={tdS}>
+                                                        <CheckBox
+                                                            checked={!!cfg.is_active}
+                                                            onClick={() => {}}
+                                                            size={20}
+                                                            color="#22c55e"
+                                                            duration={0.4}
+                                                            disabled={true}
+                                                        />
+                                                    </td>
                                                     <td style={tdS}>
                                                         <button onClick={() => deleteCfg(cfg.id)} style={btnS('#dc2626', 28)}><Trash2 size={12} /></button>
                                                     </td>

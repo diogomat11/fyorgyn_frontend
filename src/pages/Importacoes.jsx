@@ -10,6 +10,7 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import { Input, Select } from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
+import CheckBox from '../components/ui/CheckBox';
 
 
 import WorkerList from '../components/WorkerList';
@@ -29,6 +30,22 @@ export default function Importacoes() {
   // Custom job parameters
   const [importRotina, setImportRotina] = useState('');
   const [targetGuiasStr, setTargetGuiasStr] = useState('');
+
+  // IPASGO specific parameters
+  const [ipasgoStartDate, setIpasgoStartDate] = useState('');
+  const [ipasgoEndDate, setIpasgoEndDate] = useState('');
+  const [ipasgoCarteira, setIpasgoCarteira] = useState('');
+  const [ipasgoGuia, setIpasgoGuia] = useState('');
+
+  // OP6 parameters
+  const [op6LoteId, setOp6LoteId] = useState('');
+  const [op6CodigoPrestador, setOp6CodigoPrestador] = useState('');
+
+  // OP7 parameters
+  const [op7DetalheId, setOp7DetalheId] = useState('');
+  const [op7Status, setOp7Status] = useState('');
+  const [op7DataRealizacao, setOp7DataRealizacao] = useState('');
+  const [op7ValorProcedimento, setOp7ValorProcedimento] = useState('');
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
@@ -89,7 +106,11 @@ export default function Importacoes() {
 
   // Derive dynamic operacoes based on selectedConvenio
   const currentConvenioObj = convenios.find(c => c.id_convenio.toString() === selectedConvenio);
-  const currentOperacoes = currentConvenioObj?.operacoes || [];
+  const currentOperacoes = (currentConvenioObj?.operacoes || []).sort((a, b) => {
+    const numA = parseInt(a.descricao.match(/^\d+/)?.[0] || '999', 10);
+    const numB = parseInt(b.descricao.match(/^\d+/)?.[0] || '999', 10);
+    return numA - numB;
+  });
 
   useEffect(() => {
     // Reset or auto-select routine when convenio changes
@@ -170,7 +191,9 @@ export default function Importacoes() {
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
-    if ((importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
+    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan'].includes(importRotina);
+
+    if (!isIpasgoSpecial && (importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
       alert("Selecione pelo menos uma carteirinha/paciente.");
       return;
     }
@@ -194,6 +217,35 @@ export default function Importacoes() {
           const guiasArray = targetGuiasStr.split(',').map(g => g.trim()).filter(g => g);
           finalParams = JSON.stringify({ guias: guiasArray });
         }
+      } else if (selectedConvenio === '6' && ['3', 'op3_import_guias'].includes(finalRotina)) {
+        const ipasgoParams = {};
+        if (ipasgoStartDate) ipasgoParams.start_date = ipasgoStartDate;
+        if (ipasgoEndDate) ipasgoParams.end_date = ipasgoEndDate;
+        if (ipasgoCarteira) ipasgoParams.carteira = ipasgoCarteira;
+        if (ipasgoGuia) ipasgoParams.numero_guia = ipasgoGuia;
+
+        if (Object.keys(ipasgoParams).length > 0) {
+          finalParams = JSON.stringify(ipasgoParams);
+        }
+      } else if (selectedConvenio === '6' && ['6', 'op6_check_baixados'].includes(finalRotina)) {
+        finalParams = JSON.stringify({
+          loteId: op6LoteId,
+          codigoPrestador: op6CodigoPrestador
+        });
+      } else if (selectedConvenio === '6' && ['7', 'op7_fat_facplan'].includes(finalRotina)) {
+        let dtRealizacaoFormatted = op7DataRealizacao;
+        if (op7DataRealizacao) {
+            const parts = op7DataRealizacao.split('-');
+            if (parts.length === 3) {
+                dtRealizacaoFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+            }
+        }
+        finalParams = JSON.stringify({
+          detalheId: op7DetalheId,
+          status: op7Status,
+          dataRealizacao: dtRealizacaoFormatted,
+          valorProcedimento: op7ValorProcedimento
+        });
       }
 
       if (importType === 'temp') {
@@ -226,7 +278,7 @@ export default function Importacoes() {
           rotina: finalRotina,
           params: finalParams,
           id_convenio: selectedConvenio ? parseInt(selectedConvenio) : undefined,
-          carteirinha_ids: (importType === 'all') ? [] : selectedCarteirinhas
+          carteirinha_ids: (importType === 'all' || isIpasgoSpecial) ? [] : selectedCarteirinhas
         };
       }
 
@@ -401,6 +453,108 @@ export default function Importacoes() {
             </div>
           )}
 
+          {selectedConvenio === '6' && ['3', 'op3_import_guias'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Início</label>
+                <Input
+                  type="date"
+                  value={ipasgoStartDate}
+                  onChange={e => setIpasgoStartDate(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Fim</label>
+                <Input
+                  type="date"
+                  value={ipasgoEndDate}
+                  onChange={e => setIpasgoEndDate(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Carteira Opcional</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 123456789"
+                  value={ipasgoCarteira}
+                  onChange={e => setIpasgoCarteira(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Guia Opcional</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 987654"
+                  value={ipasgoGuia}
+                  onChange={e => setIpasgoGuia(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['6', 'op6_check_baixados'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Lote ID *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 12345"
+                  value={op6LoteId}
+                  onChange={e => setOp6LoteId(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Cód. Prestador Opcional</label>
+                <Input
+                  type="text"
+                  placeholder="Deixar vazio p/ padrão"
+                  value={op6CodigoPrestador}
+                  onChange={e => setOp6CodigoPrestador(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['7', 'op7_fat_facplan'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Detalhe ID *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 5678"
+                  value={op7DetalheId}
+                  onChange={e => setOp7DetalheId(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Status Conf. *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 67"
+                  value={op7Status}
+                  onChange={e => setOp7Status(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Realização *</label>
+                <Input
+                  type="date"
+                  value={op7DataRealizacao}
+                  onChange={e => setOp7DataRealizacao(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Valor Proc. (Opcional)</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 150.00"
+                  value={op7ValorProcedimento}
+                  onChange={e => setOp7ValorProcedimento(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
           {importType === 'temp' ? (
             <>
               <div className="md:col-span-3">
@@ -471,22 +625,31 @@ export default function Importacoes() {
                       </Button>
                     </div>
 
-                    {/* Selected List Badge Area */}
-                    <div className="bg-slate-900/50 p-2 rounded-lg min-h-[50px] max-h-[150px] overflow-y-auto flex flex-wrap gap-2">
-                      {selectedCarteirinhas.length === 0 && <span className="text-text-secondary text-xs italic">Nenhum paciente selecionado</span>}
+                    {/* Selected List — Checkboxes Animados */}
+                    <div className="bg-slate-900/50 p-2 rounded-lg min-h-[56px] max-h-[160px] overflow-y-auto flex flex-col gap-1">
+                      {selectedCarteirinhas.length === 0 && (
+                        <span className="text-text-secondary text-xs italic p-1">Nenhum paciente selecionado</span>
+                      )}
                       {selectedCarteirinhas.map(id => {
                         const c = carteirinhas.find(x => x.id === id);
                         return (
-                          <div key={id} className="inline-flex items-center gap-1 bg-surface border border-border px-2 py-1 rounded text-xs text-text-primary">
-                            <span>{c ? (c.paciente || c.carteirinha) : id}</span>
-                            <button
+                          <div
+                            key={id}
+                            className="flex items-center justify-between gap-2 bg-surface/60 hover:bg-slate-700/50 border border-border/40 px-2 py-1 rounded-md transition-colors group"
+                          >
+                            <CheckBox
+                              checked={true}
                               onClick={() => setSelectedCarteirinhas(selectedCarteirinhas.filter(x => x !== id))}
-                              className="text-error hover:text-red-300 font-bold ml-1"
-                            >
-                              &times;
-                            </button>
+                              size={16}
+                              color="#6366f1"
+                              duration={0.35}
+                              label={c ? (c.paciente || c.carteirinha) : `ID: ${id}`}
+                            />
+                            <span className="text-xs text-slate-500 group-hover:text-slate-400 font-mono transition-colors shrink-0">
+                              {c?.carteirinha || ''}
+                            </span>
                           </div>
-                        )
+                        );
                       })}
                     </div>
                   </div>

@@ -1,13 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play } from 'lucide-react';
+import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
 // Design System components matching the app's aesthetic
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import { Input, Select } from '../components/ui/Input';
+
+// ── TimeoutPie: indicador visual de timeout de captura (Goiânia) ──
+// 0-40min = verde, 40-50min = amarelo, 50min+ = vermelho
+// Timeout esgotado (59min) = contorno vermelho + tooltip "Guia não capturada"
+const TIMEOUT_MINUTES = 59;
+function TimeoutPie({ timestampCaptura }) {
+    // Sem timestamp = guia não capturada → exibe ícone expirado
+    if (!timestampCaptura) {
+        return (
+            <span title="Guia não capturada" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 6, cursor: 'help' }}>
+                <svg width={20} height={20} viewBox="0 0 20 20">
+                    <circle cx={10} cy={10} r={8} fill="none" stroke="#ef4444" strokeWidth="2" />
+                </svg>
+            </span>
+        );
+    }
+
+    const capturedAt = new Date(timestampCaptura);
+    const now = new Date();
+    const elapsedMs = now - capturedAt;
+    const elapsedMin = elapsedMs / 60000;
+    const remainingMin = Math.max(0, TIMEOUT_MINUTES - elapsedMin);
+    const expired = elapsedMin >= TIMEOUT_MINUTES;
+    const fraction = Math.min(elapsedMin / TIMEOUT_MINUTES, 1);
+
+    // Cor baseada no tempo decorrido
+    let color = '#22c55e'; // green
+    if (elapsedMin >= 50) color = '#ef4444'; // red
+    else if (elapsedMin >= 40) color = '#eab308'; // yellow
+
+    const tooltip = expired
+        ? 'Guia não capturada (timeout esgotado)'
+        : `${Math.round(remainingMin)}min restantes`;
+
+    // SVG pie chart arc
+    const size = 20;
+    const r = 8;
+    const cx = size / 2;
+    const cy = size / 2;
+    const angle = fraction * 360;
+    const rad = (angle - 90) * (Math.PI / 180);
+    const x = cx + r * Math.cos(rad);
+    const y = cy + r * Math.sin(rad);
+    const largeArc = angle > 180 ? 1 : 0;
+
+    if (expired) {
+        return (
+            <span title={tooltip} style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 6, cursor: 'help' }}>
+                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                    <circle cx={cx} cy={cy} r={r} fill="none" stroke="#ef4444" strokeWidth="2" />
+                </svg>
+            </span>
+        );
+    }
+
+    const pathD = angle >= 360
+        ? `M ${cx},${cy - r} A ${r},${r} 0 1,1 ${cx - 0.01},${cy - r} Z`
+        : `M ${cx},${cy} L ${cx},${cy - r} A ${r},${r} 0 ${largeArc},1 ${x},${y} Z`;
+
+    return (
+        <span title={tooltip} style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 6, cursor: 'help' }}>
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#334155" strokeWidth="1.5" />
+                <path d={pathD} fill={color} />
+            </svg>
+        </span>
+    );
+}
 
 export default function Agendamentos() {
     const [agendamentos, setAgendamentos] = useState([]);
@@ -179,48 +247,37 @@ export default function Agendamentos() {
     const handleCapturar = async (agenda) => {
         try {
             setLoading(true);
-            const resCap = await api.post('/agendamentos/capturar', { agendamento_id: agenda.id_agendamento });
-            await api.post('/agendamentos/executar', { agendamento_id: agenda.id_agendamento, depending_id: resCap.data.job_id });
-            alert("Jobs de Captura e Execução orquestrados em cadeia de dependência!");
+            await api.post('/agendamentos/capturar', { agendamento_id: agenda.id_agendamento });
+            alert("Job de Captura enfileirado com sucesso!");
             loadData();
         } catch (error) {
             console.error(error);
-            alert("Erro ao disparar Captura.");
+            if (error.response && error.response.status === 409) {
+                alert(error.response.data.detail || "Já existe um job de Captura ativo para esta guia.");
+            } else {
+                alert("Erro ao disparar Captura.");
+            }
         } finally {
             setLoading(false);
         }
     };
 
     const handleExecutar = async (agenda) => {
-        if (agenda.id_convenio === 3) {
-            if (!agenda.timestamp_captura) {
-                alert("ERRO: Guia não possui Captura. Realize a Captura restrita primeiramente.");
+        // Para Goiânia e Anápolis: backend auto-cria Captura se necessário
+        if (agenda.id_convenio === 2 || agenda.id_convenio === 3 || agenda.id_convenio === 6) {
+            if (!window.confirm("Confirma a Execução da guia ?\n(Para Unimed Goiânia/Anápolis, se necessário, um Job de Captura será criado automaticamente antes da Execução.)")) {
                 return;
             }
-            if (!window.confirm("Confirma a Execução da guia no painel SGUCard?")) {
-                return;
-            }
-
             try {
                 setLoading(true);
-                await api.post('/agendamentos/executar', { agendamento_id: agenda.id_agendamento, depending_id: null });
-                alert("Job de Execução Direta enfileirado com sucesso.");
+                const res = await api.post('/agendamentos/executar', { agendamento_id: agenda.id_agendamento });
+                const msg = res.data.captura_job_id
+                    ? `Jobs Captura (#${res.data.captura_job_id}) → Execução (#${res.data.job_id}) enfileirados!`
+                    : `Job de Execução (#${res.data.job_id}) enfileirado!`;
+                alert(msg);
                 loadData();
             } catch (error) {
                 alert("Erro ao disparar Execução.");
-            } finally {
-                setLoading(false);
-            }
-
-        } else if (agenda.id_convenio === 2) {
-            try {
-                setLoading(true);
-                const resCap = await api.post('/agendamentos/capturar', { agendamento_id: agenda.id_agendamento });
-                await api.post('/agendamentos/executar', { agendamento_id: agenda.id_agendamento, depending_id: resCap.data.job_id });
-                alert("Jobs em Cascata disparados para Unimed Anápolis (sem restrição de timestamp).");
-                loadData();
-            } catch (error) {
-                alert("Erro ao orquestrar Jobs Unimed Anápolis.");
             } finally {
                 setLoading(false);
             }
@@ -228,7 +285,7 @@ export default function Agendamentos() {
     };
 
     return (
-        <div className="p-8 space-y-6 max-w-7xl mx-auto pb-24 animate-fade-in">
+        <div className="p-4 md:p-6 space-y-4 pb-24 animate-fade-in">
             {/* Header */}
             <div className="flex justify-between items-center bg-surface p-6 rounded-2xl border border-border">
                 <div className="flex items-center gap-4">
@@ -334,122 +391,151 @@ export default function Agendamentos() {
                     <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-800/50 border-b border-slate-700/50 text-slate-400">
                             <tr>
-                                <th className="p-4 w-10">
+                                <th className="px-2 py-2 w-8">
                                     <input type="checkbox" className="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary focus:ring-offset-slate-900" checked={agendamentos.length > 0 && selectedIds.length === agendamentos.length} onChange={handleSelectAll} />
                                 </th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Paciente</th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Data</th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Horário</th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Profissional</th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Guia Vinculada</th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Cód Faturamento</th>
-                                <th className="p-4 font-medium uppercase tracking-wider text-[11px]">Status</th>
-                                <th className="p-4 font-medium uppercase text-right tracking-wider text-[11px]">Ações</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Paciente</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Data</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Hora</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Profissional</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Guia</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">
+                                    <div>Status Captura</div>
+                                    <div className="flex items-center gap-1.5 mt-0.5 font-normal normal-case tracking-normal">
+                                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="0-40min"></span>
+                                        <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" title="40-50min"></span>
+                                        <span className="inline-block w-2 h-2 rounded-full bg-red-500" title="50min+"></span>
+                                        <span className="inline-block w-2 h-2 rounded-full border border-red-500" title="Expirado / Não capturada"></span>
+                                    </div>
+                                </th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Cód Fat.</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Status</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Exec.</th>
+                                <th className="px-2 py-2 font-medium uppercase text-center tracking-wider text-[10px]">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
                             {agendamentos.map(agenda => (
-                                <tr key={agenda.id_agendamento} className={`hover: bg - slate - 800 / 30 transition - colors ${selectedIds.includes(agenda.id_agendamento) ? 'bg-primary/5' : ''} `}>
-                                    <td className="p-4">
+                                <tr key={agenda.id_agendamento} className={`hover:bg-slate-800/30 transition-colors ${selectedIds.includes(agenda.id_agendamento) ? 'bg-primary/5' : ''}`}>
+                                    <td className="px-2 py-1.5">
                                         <input type="checkbox" className="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary focus:ring-offset-slate-900" checked={selectedIds.includes(agenda.id_agendamento)} onChange={() => toggleSelect(agenda.id_agendamento)} />
                                     </td>
-                                    <td className="p-4">
-                                        <div className="font-medium text-slate-200">{agenda.Nome_Paciente}</div>
-                                        <div className="text-xs text-slate-500">{agenda.carteirinha}</div>
+                                    <td className="px-2 py-1.5">
+                                        <div className="font-medium text-slate-200 text-xs truncate max-w-[140px]" title={agenda.Nome_Paciente}>{agenda.Nome_Paciente}</div>
                                     </td>
-                                    <td className="p-4 text-slate-300">{formatDate(agenda.data)}</td>
-                                    <td className="p-4 text-slate-300">{agenda.hora_inicio ? agenda.hora_inicio.substring(0, 5) : '-'}</td>
-                                    <td className="p-4">
-                                        <div className="text-slate-300">{agenda.Nome_profissional}</div>
-                                        <div className="text-xs text-slate-500">{agenda.nome_convenio}</div>
+                                    <td className="px-2 py-1.5 text-slate-300 text-xs">{formatDate(agenda.data)}</td>
+                                    <td className="px-2 py-1.5 text-slate-300 text-xs">{agenda.hora_inicio ? agenda.hora_inicio.substring(0, 5) : '-'}</td>
+                                    <td className="px-2 py-1.5">
+                                        <div className="text-slate-300 text-xs truncate max-w-[120px]" title={agenda.Nome_profissional}>{agenda.Nome_profissional}</div>
+                                        <div className="text-[10px] text-slate-500">{agenda.nome_convenio}</div>
                                     </td>
-                                    <td className="p-4">
+                                    <td className="px-2 py-1.5">
                                         {agenda.numero_guia ? (
-                                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                                {agenda.numero_guia} (S: {agenda.saldo_guia})
+                                            <span title={`Saldo da guia: ${agenda.saldo_guia ?? '-'}`} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700 cursor-help">
+                                                {agenda.numero_guia}
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
-                                                S/ Guia
-                                            </span>
+                                            <span className="text-[10px] text-slate-500">—</span>
                                         )}
                                     </td>
-                                    <td className="p-4">
+                                    <td className="px-2 py-1.5">
+                                        {agenda.id_convenio === 3 && agenda.numero_guia ? (
+                                            <TimeoutPie timestampCaptura={agenda.timestamp_captura} />
+                                        ) : agenda.timestamp_captura ? (
+                                            <span className="text-[10px] text-emerald-400">✓</span>
+                                        ) : (
+                                            <span className="text-[10px] text-slate-600">—</span>
+                                        )}
+                                    </td>
+                                    <td className="px-2 py-1.5">
                                         <div className="group relative inline-block cursor-help">
-                                            <span className="border-b border-dashed border-slate-500 text-slate-300">{agenda.cod_procedimento_fat || '-'}</span>
+                                            <span className="text-xs text-slate-300">{agenda.cod_procedimento_fat || '-'}</span>
                                             {agenda.nome_procedimento && (
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-[250px] whitespace-normal bg-slate-800 text-slate-100 text-xs rounded p-2 z-10 shadow-lg border border-slate-700">
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-[200px] whitespace-normal bg-slate-800 text-slate-100 text-[10px] rounded p-1.5 z-10 shadow-lg border border-slate-700">
                                                     {agenda.nome_procedimento}
                                                 </div>
                                             )}
                                         </div>
                                     </td>
-                                    <td className="p-4">
-                                        <span className={`inline - flex items - center px - 2.5 py - 1 rounded - full text - xs font - medium border ${agenda.Status === 'Confirmado' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                    <td className="px-2 py-1.5">
+                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${agenda.Status === 'Confirmado' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                                             agenda.Status === 'Falta' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
                                                 agenda.Status === 'Faturado' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                                     agenda.Status === 'Faturamento Solicitado' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
                                                         'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                            } `}>
+                                            }`}>
                                             {agenda.Status}
                                         </span>
                                     </td>
-                                    <td className="p-4 text-right">
-                                        <div className="flex justify-end items-center gap-2">
-                                            {/* Botão Capturar (Só Unimed GO e Unimed AN) */}
+                                    <td className="px-2 py-1.5">
+                                        {agenda.execucao_status ? (
+                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${agenda.execucao_status === 'sucesso' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                                agenda.execucao_status === 'erro' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                                    'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                }`}>
+                                                {agenda.execucao_status === 'sucesso' ? '✓' :
+                                                    agenda.execucao_status === 'erro' ? '✗' :
+                                                        '⏳'}
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-600 text-[10px]">—</span>
+                                        )}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-center">
+                                        <div className="flex justify-center items-center gap-1">
                                             {(agenda.id_convenio == 2 || agenda.id_convenio == 3) && (
-                                                <Button variant="ghost" size="sm"
+                                                <button
+                                                    title={agenda.timestamp_captura ? 'Capturado' : 'Capturar'}
                                                     disabled={agenda.execucao_status === 'sucesso' || agenda.timestamp_captura}
                                                     onClick={() => handleCapturar(agenda)}
-                                                    className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-30 disabled:pointer-events-none"
+                                                    className="p-1 rounded hover:bg-indigo-500/10 text-indigo-400 hover:text-indigo-300 disabled:opacity-30 disabled:pointer-events-none transition-colors"
                                                 >
-                                                    {agenda.timestamp_captura ? "Capturado" : "Capturar"}
-                                                </Button>
+                                                    <Shield size={14} />
+                                                </button>
                                             )}
-
-                                            {/* Botão Executar/Faturar (Só Unimed GO e Unimed AN) */}
-                                            {(agenda.id_convenio == 2 || agenda.id_convenio == 3) && (
-                                                <Button variant="ghost" size="sm"
+                                            {(agenda.id_convenio == 2 || agenda.id_convenio == 3 || agenda.id_convenio == 6) && (
+                                                <button
+                                                    title={agenda.execucao_status === 'sucesso' ? 'Executado' : agenda.execucao_status === 'pendente' ? 'Pendente...' : 'Executar'}
                                                     disabled={agenda.execucao_status === 'sucesso' || agenda.execucao_status === 'pendente'}
                                                     onClick={() => handleExecutar(agenda)}
-                                                    className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-30 disabled:pointer-events-none"
+                                                    className="p-1 rounded hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 disabled:opacity-30 disabled:pointer-events-none transition-colors"
                                                 >
-                                                    {agenda.execucao_status === 'sucesso' ? "Executado" :
-                                                        agenda.execucao_status === 'pendente' ? "Pendente..." : "Executar"}
-                                                </Button>
+                                                    <Play size={14} />
+                                                </button>
                                             )}
-
-                                            <Button variant="ghost" size="sm" className="text-primary hover:text-primary-hover hover:bg-primary/10" onClick={() => {
-                                                const newStatus = window.prompt("Digite o novo status (Confirmado, Falta, A Confirmar):", agenda.Status);
-                                                if (newStatus && newStatus !== agenda.Status) {
-                                                    const executeStatus = async () => {
-                                                        let capturar = true;
-                                                        if (newStatus === 'Confirmado' && agenda.id_convenio == 3) {
-                                                            capturar = await confirmCaptura();
-                                                        }
-                                                        api.put('/agendamentos/batch-status', { ids: [agenda.id_agendamento], status: newStatus, capturar_guias: capturar })
-                                                            .then((res) => {
-                                                                if (newStatus === 'Confirmado' && res.data && res.data.jobs_created > 0) {
-                                                                    alert(`Status alterado para Confirmado. ${res.data.jobs_created} Jobs automáticos iniciados!`);
-                                                                } else {
-                                                                    // silencioso para alteracoes sem Jobs automaticos
-                                                                }
-                                                                loadData();
-                                                            })
-                                                            .catch(err => alert("Erro ao atualizar o status"));
-                                                    };
-                                                    executeStatus();
-                                                }
-                                            }}>
-                                                Status
-                                            </Button>
+                                            <button
+                                                title="Alterar Status"
+                                                className="p-1 rounded hover:bg-primary/10 text-primary hover:text-primary-hover transition-colors"
+                                                onClick={() => {
+                                                    const newStatus = window.prompt("Digite o novo status (Confirmado, Falta, A Confirmar):", agenda.Status);
+                                                    if (newStatus && newStatus !== agenda.Status) {
+                                                        const executeStatus = async () => {
+                                                            let capturar = true;
+                                                            if (newStatus === 'Confirmado' && agenda.id_convenio == 3) {
+                                                                capturar = await confirmCaptura();
+                                                            }
+                                                            api.put('/agendamentos/batch-status', { ids: [agenda.id_agendamento], status: newStatus, capturar_guias: capturar })
+                                                                .then((res) => {
+                                                                    if (newStatus === 'Confirmado' && res.data && res.data.jobs_created > 0) {
+                                                                        alert(`Status alterado para Confirmado. ${res.data.jobs_created} Jobs automáticos iniciados!`);
+                                                                    }
+                                                                    loadData();
+                                                                })
+                                                                .catch(err => alert("Erro ao atualizar o status"));
+                                                        };
+                                                        executeStatus();
+                                                    }
+                                                }}
+                                            >
+                                                <Edit3 size={14} />
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
                             ))}
                             {agendamentos.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan="8" className="p-8 text-center text-slate-500">
+                                    <td colSpan="11" className="p-8 text-center text-slate-500">
                                         Nenhum agendamento encontrado com os filtros atuais.
                                     </td>
                                 </tr>

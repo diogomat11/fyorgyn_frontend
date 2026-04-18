@@ -90,3 +90,34 @@ export const validateCarteirinha = (value) => {
 
     return true;
 };
+
+export const maskCodigoBeneficiario = (value) => {
+    if (!value) return '';
+    // Keep only digits
+    let v = value.replace(/\D/g, '');
+    if (v.length > 1) {
+        // Formato sequencia númerica seguida de traço e dígito, como 1180507-2
+        return v.replace(/(\d)(\d)$/, '$1-$2');
+    }
+    return v;
+};
+
+export const maskSulamerica = (value) => {
+    if (!value) return '';
+    const digits = value.replace(/\D/g, '').slice(0, 20);
+    let result = '';
+
+    if (digits.length > 0) result = digits.slice(0, 3);
+    if (digits.length > 3) result += '.' + digits.slice(3, 8);
+    if (digits.length > 8) result += '.' + digits.slice(8, 12);
+    if (digits.length > 12) result += '.' + digits.slice(12, 16);
+    if (digits.length > 16) result += '.' + digits.slice(16, 20);
+
+    return result;
+};
+
+export const maskNumerics = (value, maxLength) => {
+    if (!value) return '';
+    const digits = value.replace(/\D/g, '');
+    return maxLength ? digits.slice(0, maxLength) : digits;
+};

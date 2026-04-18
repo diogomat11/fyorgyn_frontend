@@ -1,20 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { X, Save } from 'lucide-react';
-import { maskCarteirinha, validateCarteirinha } from '../utils/formatters';
+import { maskCarteirinha, validateCarteirinha, maskCodigoBeneficiario, maskSulamerica, maskNumerics } from '../utils/formatters';
 import Button from './ui/Button';
 import { Input, Select } from './ui/Input';
 import Card from './ui/Card';
 
-export default function EditCarteirinhaModal({ carteirinha, onClose, onSave }) {
+export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, onSave }) {
     const [formData, setFormData] = useState({
         carteirinha: '',
         paciente: '',
         id_paciente: '',
-        id_pagamento: '',
+        codigo_beneficiario: '',
         status: 'ativo'
     });
     const [loading, setLoading] = useState(false);
+
+    const isIpasgoSelected = (id) => {
+        if (!id || !convenios) return false;
+        const selected = convenios.find(c => c.id_convenio.toString() === id.toString());
+        return selected?.nome?.toLowerCase().includes('ipasgo');
+    };
+
+    const handleCarteirinhaFormat = (value, id_convenio) => {
+        if (!id_convenio || !convenios) return value;
+        const selected = convenios.find(c => c.id_convenio.toString() === id_convenio.toString());
+        if (!selected) return value;
+
+        const nome = selected.nome.toLowerCase();
+        if (nome.includes('unimed')) {
+            return maskCarteirinha(value);
+        } else if (nome.includes('sulamerica')) {
+            return maskSulamerica(value);
+        } else if (nome.includes('amil') || nome.includes('ipasgo')) {
+            return maskNumerics(value, selected.digitos_carteirinha || 9);
+        }
+        return maskNumerics(value, selected.digitos_carteirinha);
+    };
 
     useEffect(() => {
         if (carteirinha) {
@@ -22,7 +44,7 @@ export default function EditCarteirinhaModal({ carteirinha, onClose, onSave }) {
                 carteirinha: carteirinha.carteirinha,
                 paciente: carteirinha.paciente,
                 id_paciente: carteirinha.id_paciente || '',
-                id_pagamento: carteirinha.id_pagamento || '',
+                codigo_beneficiario: carteirinha.codigo_beneficiario || '',
                 status: carteirinha.status || 'ativo'
             });
         }
@@ -42,7 +64,7 @@ export default function EditCarteirinhaModal({ carteirinha, onClose, onSave }) {
                 carteirinha: formData.carteirinha,
                 paciente: formData.paciente,
                 id_paciente: formData.id_paciente ? parseInt(formData.id_paciente) : null,
-                id_pagamento: formData.id_pagamento ? parseInt(formData.id_pagamento) : null,
+                codigo_beneficiario: formData.codigo_beneficiario ? formData.codigo_beneficiario : null,
                 status: formData.status
             };
             await api.put(`/carteirinhas/${carteirinha.id}`, payload);
@@ -73,9 +95,9 @@ export default function EditCarteirinhaModal({ carteirinha, onClose, onSave }) {
                         <Input
                             type="text"
                             value={formData.carteirinha}
-                            onChange={e => setFormData({ ...formData, carteirinha: maskCarteirinha(e.target.value) })}
+                            onChange={e => setFormData({ ...formData, carteirinha: handleCarteirinhaFormat(e.target.value, carteirinha.id_convenio) })}
                             required
-                            maxLength={21}
+                            maxLength={25}
                         />
                     </div>
                     <div>
@@ -97,15 +119,18 @@ export default function EditCarteirinhaModal({ carteirinha, onClose, onSave }) {
                                 placeholder="123"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-text-secondary mb-1">ID Pagamento</label>
-                            <Input
-                                type="number"
-                                value={formData.id_pagamento}
-                                onChange={e => setFormData({ ...formData, id_pagamento: e.target.value })}
-                                placeholder="456"
-                            />
-                        </div>
+                        {isIpasgoSelected(carteirinha.id_convenio) && (
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary mb-1">Código do Paciente no Convênio *</label>
+                                <Input
+                                    type="text"
+                                    value={formData.codigo_beneficiario}
+                                    onChange={e => setFormData({ ...formData, codigo_beneficiario: maskCodigoBeneficiario(e.target.value) })}
+                                    placeholder="1180507-2"
+                                    required
+                                />
+                            </div>
+                        )}
                     </div>
 
                     <div>

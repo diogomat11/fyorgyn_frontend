@@ -31,9 +31,19 @@ export default function Sidebar() {
                 <Link to="/" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/') || isActive('/jobs') ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
                     <FileText size={18} /> Importações
                 </Link>
-                <Link to="/guias" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/guias')}`}>
-                    <Table size={18} /> Base Guias
-                </Link>
+                <div className="mt-2 mb-2">
+                    <div className="flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider">
+                        <Table size={16} /> Autorizações
+                    </div>
+                    <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1">
+                        <Link to="/guias?aba=autorizadas" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/guias' && (location.search === '?aba=autorizadas' || !location.search.includes('aba=')) ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
+                            Guias
+                        </Link>
+                        <Link to="/guias?aba=solicitacoes" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/guias' && location.search === '?aba=solicitacoes' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
+                            Solicitações
+                        </Link>
+                    </div>
+                </div>
                 <Link to="/pei" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/pei')}`}>
                     <Table size={18} /> Gestão PEI
                 </Link>
