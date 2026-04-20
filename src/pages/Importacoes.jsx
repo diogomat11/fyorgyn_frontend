@@ -47,6 +47,12 @@ export default function Importacoes() {
   const [op7DataRealizacao, setOp7DataRealizacao] = useState('');
   const [op7ValorProcedimento, setOp7ValorProcedimento] = useState('');
 
+  // OP11 parameters
+  const [op11StartDate, setOp11StartDate] = useState('');
+  const [op11EndDate, setOp11EndDate] = useState('');
+  const [op11Beneficiario, setOp11Beneficiario] = useState('');
+  const [op11Guia, setOp11Guia] = useState('');
+
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
 
@@ -191,7 +197,7 @@ export default function Importacoes() {
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
-    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan'].includes(importRotina);
+    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api'].includes(importRotina);
 
     if (!isIpasgoSpecial && (importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
       alert("Selecione pelo menos uma carteirinha/paciente.");
@@ -246,6 +252,20 @@ export default function Importacoes() {
           dataRealizacao: dtRealizacaoFormatted,
           valorProcedimento: op7ValorProcedimento
         });
+      } else if (selectedConvenio === '6' && ['11', 'op11_import_guias_api'].includes(finalRotina)) {
+        const codigoPrestador = (currentConvenioObj?.codigo_referenciado || '').trim();
+        const op11Params = { codigoPrestador };
+        if (op11StartDate) {
+          const p = op11StartDate.split('-');
+          op11Params.data_ini = p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : op11StartDate;
+        }
+        if (op11EndDate) {
+          const p = op11EndDate.split('-');
+          op11Params.data_fim = p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : op11EndDate;
+        }
+        if (op11Beneficiario) op11Params.codigoBeneficiario = op11Beneficiario;
+        if (op11Guia) op11Params.guia = op11Guia;
+        finalParams = JSON.stringify(op11Params);
       }
 
       if (importType === 'temp') {
@@ -550,6 +570,50 @@ export default function Importacoes() {
                   placeholder="Ex: 150.00"
                   value={op7ValorProcedimento}
                   onChange={e => setOp7ValorProcedimento(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['11', 'op11_import_guias_api'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Cód. Prestador: <span className="font-mono font-bold">{currentConvenioObj?.codigo_referenciado || 'N/A'}</span> (automático do convênio)
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Início</label>
+                <Input
+                  type="date"
+                  value={op11StartDate}
+                  onChange={e => setOp11StartDate(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Fim</label>
+                <Input
+                  type="date"
+                  value={op11EndDate}
+                  onChange={e => setOp11EndDate(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Beneficiário (Opcional)</label>
+                <Input
+                  type="text"
+                  placeholder="Código do beneficiário"
+                  value={op11Beneficiario}
+                  onChange={e => setOp11Beneficiario(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Guia (Opcional)</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 22014292"
+                  value={op11Guia}
+                  onChange={e => setOp11Guia(e.target.value)}
                 />
               </div>
             </>
