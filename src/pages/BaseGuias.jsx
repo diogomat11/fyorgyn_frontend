@@ -102,7 +102,10 @@ export default function BaseGuias() {
         created_at_start: '',
         created_at_end: '',
         carteirinha_id: '',
-        id_convenio: ''
+        id_convenio: '',
+        senha: '',
+        codigo_terapia: '',
+        status: ''
     });
 
     const [convenios, setConvenios] = useState([]);
@@ -136,6 +139,8 @@ export default function BaseGuias() {
             };
 
             if (filters.status) params.status = filters.status;
+            if (filters.senha) params.senha = filters.senha;
+            if (filters.codigo_terapia) params.codigo_terapia = filters.codigo_terapia;
             if (filters.created_at_start) params.created_at_start = filters.created_at_start;
             if (filters.created_at_end) params.created_at_end = filters.created_at_end;
             if (filters.carteirinha_id && filters.carteirinha_id !== "") {
@@ -191,7 +196,10 @@ export default function BaseGuias() {
             created_at_start: '',
             created_at_end: '',
             carteirinha_id: '',
-            id_convenio: ''
+            id_convenio: '',
+            senha: '',
+            codigo_terapia: '',
+            status: ''
         });
         setPage(1);
     };
@@ -199,11 +207,14 @@ export default function BaseGuias() {
     const handleExport = async () => {
         setIsExporting(true);
         try {
-            const params = {};
+            const params = { aba: activeTab };
             if (filters.created_at_start) params.created_at_start = filters.created_at_start;
             if (filters.created_at_end) params.created_at_end = filters.created_at_end;
             if (filters.carteirinha_id) params.carteirinha_id = filters.carteirinha_id;
             if (filters.id_convenio) params.id_convenio = filters.id_convenio;
+            if (filters.status) params.status = filters.status;
+            if (filters.senha) params.senha = filters.senha;
+            if (filters.codigo_terapia) params.codigo_terapia = filters.codigo_terapia;
 
             const response = await api.get('/guias/export', {
                 params,
@@ -299,7 +310,10 @@ export default function BaseGuias() {
                     <div className="flex-1 w-full md:w-auto min-w-[250px]">
                         <label className="block text-xs font-semibold text-text-secondary mb-1">Paciente / Carteirinha</label>
                         <SearchableSelect
-                            options={[{ value: '', label: 'Todos os Pacientes' }, ...carteirinhas.map(c => ({
+                            options={filters.id_convenio ? carteirinhas.filter(c => c.id_convenio === parseInt(filters.id_convenio)).map(c => ({
+                                value: c.id,
+                                label: c.paciente ? c.paciente : c.carteirinha
+                            })) : [{ value: '', label: 'Todos os Pacientes' }, ...carteirinhas.map(c => ({
                                 value: c.id,
                                 label: c.paciente ? c.paciente : c.carteirinha
                             }))]}
@@ -308,32 +322,49 @@ export default function BaseGuias() {
                                 setFilters({ ...filters, carteirinha_id: val });
                                 setPage(1);
                             }}
-                            placeholder="Selecione ou Cole..."
+                            placeholder={filters.id_convenio ? "Selecione o Paciente..." : "Selecione o convênio primeiro"}
                         />
                     </div>
 
                     <div className="w-full md:w-40">
-                        <label className="block text-xs font-semibold text-text-secondary mb-1">Data Import. Início</label>
+                        <label className="block text-xs font-semibold text-text-secondary mb-1">Senha</label>
                         <Input
-                            type="date"
-                            value={filters.created_at_start}
+                            value={filters.senha}
                             onChange={e => {
-                                setFilters({ ...filters, created_at_start: e.target.value });
+                                setFilters({ ...filters, senha: e.target.value });
                                 setPage(1);
                             }}
+                            placeholder="Filtrar..."
                         />
                     </div>
 
                     <div className="w-full md:w-40">
-                        <label className="block text-xs font-semibold text-text-secondary mb-1">Data Import. Fim</label>
+                        <label className="block text-xs font-semibold text-text-secondary mb-1">Código Terapia</label>
                         <Input
-                            type="date"
-                            value={filters.created_at_end}
+                            value={filters.codigo_terapia}
                             onChange={e => {
-                                setFilters({ ...filters, created_at_end: e.target.value });
+                                setFilters({ ...filters, codigo_terapia: e.target.value });
                                 setPage(1);
                             }}
+                            placeholder="Filtrar..."
                         />
+                    </div>
+
+                    <div className="w-full md:w-40">
+                        <label className="block text-xs font-semibold text-text-secondary mb-1">Status</label>
+                        <Select
+                            value={filters.status}
+                            onChange={e => {
+                                setFilters({ ...filters, status: e.target.value });
+                                setPage(1);
+                            }}
+                        >
+                            <option value="">Todos</option>
+                            <option value="AUTORIZADA">AUTORIZADA</option>
+                            <option value="NEGADA">NEGADA</option>
+                            <option value="CANCELADA">CANCELADA</option>
+                            <option value="EM ESTUDO">EM ESTUDO</option>
+                        </Select>
                     </div>
 
                     <div className="flex gap-2">
