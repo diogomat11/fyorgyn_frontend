@@ -53,6 +53,10 @@ export default function Importacoes() {
   const [op11Beneficiario, setOp11Beneficiario] = useState('');
   const [op11Guia, setOp11Guia] = useState('');
 
+  // OP12 parameters
+  const [op12Guia, setOp12Guia] = useState('');
+  const [op12GuiaPrestador, setOp12GuiaPrestador] = useState('');
+
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
 
@@ -197,7 +201,7 @@ export default function Importacoes() {
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
-    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api'].includes(importRotina);
+    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api'].includes(importRotina);
 
     if (!isIpasgoSpecial && (importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
       alert("Selecione pelo menos uma carteirinha/paciente.");
@@ -266,6 +270,12 @@ export default function Importacoes() {
         if (op11Beneficiario) op11Params.codigoBeneficiario = op11Beneficiario;
         if (op11Guia) op11Params.guia = op11Guia;
         finalParams = JSON.stringify(op11Params);
+      } else if (selectedConvenio === '6' && ['12', 'op12_impressao_api'].includes(finalRotina)) {
+        finalParams = JSON.stringify({
+          guia: op12Guia,
+          GuiaPrestador: op12GuiaPrestador,
+          numero_copias: 1
+        });
       }
 
       if (importType === 'temp') {
@@ -614,6 +624,29 @@ export default function Importacoes() {
                   placeholder="Ex: 22014292"
                   value={op11Guia}
                   onChange={e => setOp11Guia(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['12', 'op12_impressao_api'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Guia Operadora *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 22112786"
+                  value={op12Guia}
+                  onChange={e => setOp12Guia(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Guia Prestador *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 00632220042617555801"
+                  value={op12GuiaPrestador}
+                  onChange={e => setOp12GuiaPrestador(e.target.value)}
                 />
               </div>
             </>

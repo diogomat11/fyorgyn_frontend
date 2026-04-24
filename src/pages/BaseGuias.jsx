@@ -242,9 +242,11 @@ export default function BaseGuias() {
                 type: 'single',
                 carteirinha_ids: [guia.carteirinha_id],
                 id_convenio: guia.id_convenio,
-                rotina: '5',
+                rotina: guia.id_convenio === 6 ? '12' : '5',
                 params: JSON.stringify({
                     numero_guia: guia.guia,
+                    guia: guia.guia,
+                    GuiaPrestador: guia.guia_prestador || guia.guia,
                     numero_copias: 1
                 })
             });
