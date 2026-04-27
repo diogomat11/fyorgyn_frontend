@@ -9,6 +9,9 @@ import GestaoPei from './pages/GestaoPei';
 import Agendamentos from './pages/Agendamentos';
 import Manual from './pages/Manual';
 import Prioridades from './pages/Prioridades';
+import GestaoLotes from './pages/GestaoLotes';
+import LotesAgendamentos from './pages/LotesAgendamentos';
+import Conciliacao from './pages/Conciliacao';
 import MainLayout from './layouts/MainLayout';
 
 function PrivateRoute({ children }) {
@@ -75,6 +78,28 @@ export default function App() {
             <Prioridades />
           </PrivateRoute>
         } />
+
+        {/* Faturamento - Sub-rotas */}
+        <Route path="/faturamento/lotes" element={
+          <PrivateRoute>
+            <GestaoLotes />
+          </PrivateRoute>
+        } />
+
+        <Route path="/faturamento/agendamentos" element={
+          <PrivateRoute>
+            <LotesAgendamentos />
+          </PrivateRoute>
+        } />
+
+        <Route path="/faturamento/conciliacao" element={
+          <PrivateRoute>
+            <Conciliacao />
+          </PrivateRoute>
+        } />
+
+        {/* Redirect antigo /lotes para novo path */}
+        <Route path="/lotes" element={<Navigate to="/faturamento/lotes" replace />} />
       </Routes>
     </BrowserRouter>
   );

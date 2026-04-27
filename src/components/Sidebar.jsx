@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, Activity, LogOut, Table, BookOpen, Calendar, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Activity, LogOut, Table, BookOpen, Calendar, Zap, Layers } from 'lucide-react';
 
 export default function Sidebar() {
     const location = useLocation();
@@ -62,6 +62,22 @@ export default function Sidebar() {
                 <Link to="/prioridades" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/prioridades')}`}>
                     <Zap size={18} /> Prioridades
                 </Link>
+                <div className="mt-2 mb-2">
+                    <div className="flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider">
+                        <Layers size={16} /> Faturamento
+                    </div>
+                    <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1">
+                        <Link to="/faturamento/lotes" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/lotes' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
+                            Lotes - Convênios
+                        </Link>
+                        <Link to="/faturamento/agendamentos" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/agendamentos' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
+                            Lotes Agendamentos
+                        </Link>
+                        <Link to="/faturamento/conciliacao" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/conciliacao' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
+                            Conciliação
+                        </Link>
+                    </div>
+                </div>
             </nav>
 
             <div className="p-4 border-t border-slate-800">
