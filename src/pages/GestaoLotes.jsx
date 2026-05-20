@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
-import { Layers, Plus, X, Search, RefreshCw, XCircle, CheckCircle, HelpCircle, Download } from 'lucide-react';
+import { Layers, Plus, X, Search, RefreshCw, XCircle, CheckCircle, HelpCircle, Download, ToggleLeft, ToggleRight, Calendar } from 'lucide-react';
 
 export default function GestaoLotes() {
     const [lotes, setLotes] = useState([]);
@@ -11,6 +11,7 @@ export default function GestaoLotes() {
     // Modal Novo Lote
     const [showNovoModal, setShowNovoModal] = useState(false);
     const [novoLoteForm, setNovoLoteForm] = useState({ data_fim: '', cod_prestador: '' });
+    const [autoEnvio, setAutoEnvio] = useState(false);
     
     const [showItensModal, setShowItensModal] = useState(false);
     const [selectedLote, setSelectedLote] = useState(null);
@@ -22,9 +23,13 @@ export default function GestaoLotes() {
     const [filtroDetalhe, setFiltroDetalhe] = useState('');
     const [filtroBeneficiario, setFiltroBeneficiario] = useState('');
     const [filtroStatusConf, setFiltroStatusConf] = useState('');
+    const [conferindoTodos, setConferindoTodos] = useState(false);
+
+    const pollRef = useRef(null);
 
     useEffect(() => {
         loadConvenios();
+        return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, []);
 
     useEffect(() => {
@@ -34,6 +39,28 @@ export default function GestaoLotes() {
             setLotes([]);
         }
     }, [selectedConvenio]);
+
+    // Auto-polling: every 60s when there are lotes in transitional states
+    useEffect(() => {
+        const hasTransitional = lotes.some(l => 
+            ['Criando', 'Processando', 'Cancelando'].includes(l.status)
+        );
+        if (hasTransitional && selectedConvenio) {
+            if (!pollRef.current) {
+                pollRef.current = setInterval(async () => {
+                    try {
+                        const res = await api.get(`/lotes/?id_convenio=${selectedConvenio}`);
+                        setLotes(res.data.data);
+                    } catch (e) { /* silently retry */ }
+                }, 60000); // 1 minuto
+            }
+        } else {
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+            }
+        }
+    }, [lotes, selectedConvenio]);
 
     const loadConvenios = async () => {
         try {
@@ -70,10 +97,9 @@ export default function GestaoLotes() {
                 cod_prestador: novoLoteForm.cod_prestador,
                 data_fim: novoLoteForm.data_fim
             });
-            alert("Solicitação de criação de lote enviada (Job OP13).");
             setShowNovoModal(false);
             setNovoLoteForm({ data_fim: '', cod_prestador: '' });
-            loadLotes();
+            loadLotes(); // Triggers auto-polling via the useEffect above
         } catch (error) {
             alert(error.response?.data?.detail || "Erro ao criar lote");
         }
@@ -122,29 +148,66 @@ export default function GestaoLotes() {
 
     const totalItens = filteredItens.length;
     const totalStatus67 = filteredItens.filter(i => i.StatusConferencia == 67).length;
+    const totalValorConferidos = filteredItens.filter(i => i.StatusConferencia == 67).reduce((acc, i) => acc + (i.ValorProcedimento || 0), 0);
     const totalStatus78 = filteredItens.filter(i => i.StatusConferencia == 78).length;
     const totalStatus82 = filteredItens.filter(i => i.StatusConferencia == 82).length;
     const totalConciliados = filteredItens.filter(i => i.StatusConciliacao?.toLowerCase() === 'conciliado').length;
 
     const handleExportExcel = () => {
-        if (filteredItens.length === 0) return;
-        const headers = ['Detalhe ID', 'Guia', 'Beneficiário', 'Data Realização', 'Status Conf.', 'Conciliação'];
-        const rows = filteredItens.map(item => [
+        const headers = ['Detalhe ID', 'Guia', 'Beneficiário', 'Data Realização', 'Valor', 'Status Conf.', 'Conciliação'];
+        const csvContent = [headers.join(';')].concat(filteredItens.map(item => [
             item.detalheId,
             item.Guia,
-            item.nome_beneficiario || item.CodigoBeneficiario,
-            item.dataRealizacao || '',
+            item.CodigoBeneficiario,
+            item.dataRealizacao,
+            item.ValorProcedimento || 0,
             item.StatusConferencia == 67 ? 'Conferido' : item.StatusConferencia == 78 ? 'Não Conferido' : item.StatusConferencia == 82 ? 'Removido' : item.StatusConferencia,
             item.StatusConciliacao || ''
-        ]);
-        const csvContent = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+        ].join(';'))).join('\n');
         const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `lote_${selectedLote?.numero_lote || selectedLote?.id_lote}_itens.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `lote_${selectedLote.numero_lote || selectedLote.id_lote}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleStatusClick = async (item) => {
+        let nextStatus;
+        if (item.StatusConferencia == 78) nextStatus = 67;
+        else if (item.StatusConferencia == 67) nextStatus = 82;
+        else if (item.StatusConferencia == 82) nextStatus = 78;
+        else nextStatus = 78;
+
+        try {
+            await api.put(`/lotes/itens/${item.id}`, {
+                status_conferencia: nextStatus,
+                auto_envio: autoEnvio
+            });
+            setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, StatusConferencia: nextStatus } : i));
+        } catch (e) {
+            alert(e.response?.data?.detail || "Erro ao atualizar status");
+        }
+    };
+
+    const handleEditData = async (item) => {
+        const currentData = item.dataRealizacao; // Assuming format AAAA-MM-DD from backend
+        const newDate = window.prompt("Nova data de realização (AAAA-MM-DD):", currentData);
+        if (newDate && newDate !== currentData) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+                alert("Formato inválido. Use AAAA-MM-DD.");
+                return;
+            }
+            try {
+                await api.put(`/lotes/itens/${item.id}`, { data_realizacao: newDate });
+                setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, dataRealizacao: newDate } : i));
+                alert("Data atualizada com sucesso!");
+            } catch (e) {
+                alert(e.response?.data?.detail || "Erro ao atualizar data");
+            }
+        }
     };
 
     const handleSyncItens = async () => {
@@ -168,6 +231,37 @@ export default function GestaoLotes() {
         } catch (error) {
              alert("Erro ao solicitar atualização.");
         }
+    };
+
+    const handleConferirTodos = async () => {
+        const itensPendentes = filteredItens.filter(i => i.StatusConferencia !== 67);
+        if (itensPendentes.length === 0) {
+            alert('Todos os itens visíveis já estão conferidos.');
+            return;
+        }
+        const confirmado = window.confirm(
+            `Confirmar "Conferido" para ${itensPendentes.length} item(ns)?\n` +
+            (autoEnvio ? 'Jobs OP7 serão criados automaticamente para cada item.' : 'Apenas atualiza o status local (ative Envio Automático para criar Jobs OP7).')
+        );
+        if (!confirmado) return;
+
+        setConferindoTodos(true);
+        let sucessos = 0;
+        let falhas = 0;
+        for (const item of itensPendentes) {
+            try {
+                await api.put(`/lotes/itens/${item.id}`, {
+                    status_conferencia: 67,
+                    auto_envio: autoEnvio
+                });
+                setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, StatusConferencia: 67 } : i));
+                sucessos++;
+            } catch (e) {
+                falhas++;
+            }
+        }
+        setConferindoTodos(false);
+        alert(`Concluído! ${sucessos} item(ns) conferido(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}.${autoEnvio ? '\nJobs OP7 criados para cada item processado.' : ''}`);
     };
 
     return (
@@ -242,15 +336,19 @@ export default function GestaoLotes() {
                                     </td>
                                     <td className="px-6 py-4">{lote.cod_prestador}</td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
                                             lote.status === 'Aberto' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
                                             lote.status === 'Cancelado' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                            ['Criando', 'Processando', 'Cancelando'].includes(lote.status) ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                             'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
                                         }`}>
+                                            {['Criando', 'Processando', 'Cancelando'].includes(lote.status) && (
+                                                <RefreshCw size={12} className="animate-spin" />
+                                            )}
                                             {lote.status}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4">{lote.data_fim ? new Date(lote.data_fim).toLocaleDateString('pt-BR') : '-'}</td>
+                                    <td className="px-6 py-4">{lote.data_fim ? lote.data_fim.split('T')[0].split('-').reverse().join('/') : '-'}</td>
                                     <td className="px-6 py-4 text-right flex justify-end gap-2">
                                         <button 
                                             onClick={() => handleVerItens(lote)}
@@ -319,15 +417,24 @@ export default function GestaoLotes() {
             {/* Modal Ver Itens */}
             {showItensModal && selectedLote && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col h-[80vh]">
+                    <div className="bg-slate-900 border border-slate-700 rounded-xl w-11/12 max-w-7xl shadow-2xl overflow-hidden flex flex-col h-[85vh]">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50 shrink-0">
                             <div>
-                                <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-                                    Itens do Lote {selectedLote.numero_lote || selectedLote.id_lote}
-                                </h3>
+                                <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                    <Layers size={18} className="text-indigo-400" />
+                                    Itens do Lote
+                                </h2>
                                 <p className="text-xs text-slate-400 mt-1">Status do Lote: {selectedLote.status}</p>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={() => setAutoEnvio(!autoEnvio)}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${autoEnvio ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                                    title="Envio automático de atualizações via API"
+                                >
+                                    {autoEnvio ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                                    Envio Automático
+                                </button>
                                 <button 
                                     onClick={handleExportExcel}
                                     disabled={filteredItens.length === 0}
@@ -335,6 +442,19 @@ export default function GestaoLotes() {
                                     title="Exportar para CSV/Excel"
                                 >
                                     <Download size={14} /> Exportar
+                                </button>
+                                <button
+                                    onClick={handleConferirTodos}
+                                    disabled={conferindoTodos || filteredItens.filter(i => i.StatusConferencia !== 67).length === 0}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 rounded border border-emerald-600/30 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={`Marcar todos os itens visíveis como Conferido${autoEnvio ? ' e criar Jobs OP7' : ''}`}
+                                >
+                                    {conferindoTodos ? (
+                                        <RefreshCw size={14} className="animate-spin" />
+                                    ) : (
+                                        <CheckCircle size={14} />
+                                    )}
+                                    {conferindoTodos ? 'Conferindo...' : `Conferir todos (${filteredItens.filter(i => i.StatusConferencia !== 67).length})`}
                                 </button>
                                 <button 
                                     onClick={handleSyncItens}
@@ -355,26 +475,32 @@ export default function GestaoLotes() {
                             ) : (
                                 <>
                                     {/* Mini Dashboard */}
-                                    <div className="bg-slate-800/80 p-4 border-b border-slate-700 grid grid-cols-5 gap-3 shrink-0">
+                                    <div className="bg-slate-800/80 p-4 border-b border-slate-700 grid grid-cols-6 gap-3 shrink-0">
                                         <div className="bg-slate-700/50 p-3 rounded-lg border border-slate-600/50 flex flex-col items-center justify-center">
-                                            <span className="text-xs text-slate-400 uppercase font-semibold">Total Itens</span>
-                                            <span className="text-2xl font-bold text-slate-100">{totalItens}</span>
+                                            <span className="text-xs text-slate-400 uppercase font-semibold text-center leading-tight">Total Itens</span>
+                                            <span className="text-2xl font-bold text-slate-100 mt-1">{totalItens}</span>
                                         </div>
                                         <div className="bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20 flex flex-col items-center justify-center">
-                                            <span className="text-xs text-emerald-500/80 uppercase font-semibold">Conferido</span>
-                                            <span className="text-2xl font-bold text-emerald-400">{totalStatus67}</span>
+                                            <span className="text-xs text-emerald-500/80 uppercase font-semibold text-center leading-tight">Conferido</span>
+                                            <span className="text-2xl font-bold text-emerald-400 mt-1">{totalStatus67}</span>
+                                        </div>
+                                        <div className="bg-teal-500/10 p-3 rounded-lg border border-teal-500/20 flex flex-col items-center justify-center">
+                                            <span className="text-xs text-teal-500/80 uppercase font-semibold text-center leading-tight">Valor Conf.</span>
+                                            <span className="text-lg font-bold text-teal-400 mt-1" title={`R$ ${totalValorConferidos.toFixed(2)}`}>
+                                                {totalValorConferidos > 1000 ? `R$ ${(totalValorConferidos/1000).toFixed(1)}k` : `R$ ${totalValorConferidos.toFixed(2)}`}
+                                            </span>
                                         </div>
                                         <div className="bg-amber-500/10 p-3 rounded-lg border border-amber-500/20 flex flex-col items-center justify-center">
-                                            <span className="text-xs text-amber-500/80 uppercase font-semibold">Não Conferido</span>
-                                            <span className="text-2xl font-bold text-amber-400">{totalStatus78}</span>
+                                            <span className="text-xs text-amber-500/80 uppercase font-semibold text-center leading-tight">Não Conferido</span>
+                                            <span className="text-2xl font-bold text-amber-400 mt-1">{totalStatus78}</span>
                                         </div>
                                         <div className="bg-red-500/10 p-3 rounded-lg border border-red-500/20 flex flex-col items-center justify-center">
-                                            <span className="text-xs text-red-400 uppercase font-semibold">Removido</span>
-                                            <span className="text-2xl font-bold text-red-400">{totalStatus82}</span>
+                                            <span className="text-xs text-red-400 uppercase font-semibold text-center leading-tight">Removido</span>
+                                            <span className="text-2xl font-bold text-red-400 mt-1">{totalStatus82}</span>
                                         </div>
                                         <div className="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/20 flex flex-col items-center justify-center">
-                                            <span className="text-xs text-indigo-400 uppercase font-semibold">Conciliados</span>
-                                            <span className="text-2xl font-bold text-indigo-400">{totalConciliados}</span>
+                                            <span className="text-xs text-indigo-400 uppercase font-semibold text-center leading-tight">Conciliados</span>
+                                            <span className="text-2xl font-bold text-indigo-400 mt-1">{totalConciliados}</span>
                                         </div>
                                     </div>
 
@@ -423,6 +549,7 @@ export default function GestaoLotes() {
                                                     <th className="px-4 py-3">Beneficiário</th>
                                                     <th className="px-4 py-3">Nome</th>
                                                     <th className="px-4 py-3">Data Realização</th>
+                                                    <th className="px-4 py-3">Valor</th>
                                                     <th className="px-4 py-3">Status Conf.</th>
                                                     <th className="px-4 py-3">Conciliação</th>
                                                 </tr>
@@ -441,25 +568,39 @@ export default function GestaoLotes() {
                                                             <td className="px-4 py-2">{item.Guia}</td>
                                                             <td className="px-4 py-2">{item.CodigoBeneficiario}</td>
                                                             <td className="px-4 py-2 text-xs">{item.nome_beneficiario || '-'}</td>
-                                                            <td className="px-4 py-2">{item.dataRealizacao}</td>
                                                             <td className="px-4 py-2">
-                                                                {item.StatusConferencia == 67 ? (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                                                        <CheckCircle size={12} /> Conferido
-                                                                    </span>
-                                                                ) : item.StatusConferencia == 78 ? (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                                                                        <HelpCircle size={12} /> Não Conferido
-                                                                    </span>
-                                                                ) : item.StatusConferencia == 82 ? (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-500/20 text-red-400 border border-red-500/30">
-                                                                        <XCircle size={12} /> Removido
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-slate-700 text-slate-300">
-                                                                        {item.StatusConferencia || '-'}
-                                                                    </span>
-                                                                )}
+                                                                <div className="flex items-center gap-2 group">
+                                                                    <span>{item.dataRealizacao}</span>
+                                                                    <button 
+                                                                        onClick={() => handleEditData(item)}
+                                                                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-primary transition-opacity p-1"
+                                                                        title="Editar Data"
+                                                                    >
+                                                                        <Calendar size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2 font-mono text-xs text-slate-100">R$ {item.ValorProcedimento?.toFixed(2)}</td>
+                                                            <td className="px-4 py-2">
+                                                                <button onClick={() => handleStatusClick(item)} className="focus:outline-none transition-transform hover:scale-105 active:scale-95">
+                                                                    {item.StatusConferencia == 67 ? (
+                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                                                                            <CheckCircle size={14} className="text-emerald-500" /> Conferido
+                                                                        </span>
+                                                                    ) : item.StatusConferencia == 78 ? (
+                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-400">
+                                                                            <HelpCircle size={16} className="text-blue-500" /> Não Conferido
+                                                                        </span>
+                                                                    ) : item.StatusConferencia == 82 ? (
+                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400">
+                                                                            <XCircle size={14} className="text-red-500" /> Removido
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                                                                            {item.StatusConferencia || '-'}
+                                                                        </span>
+                                                                    )}
+                                                                </button>
                                                             </td>
                                                             <td className="px-4 py-2">
                                                                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.StatusConciliacao?.toLowerCase() === 'conciliado' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-700 text-slate-300'}`}>

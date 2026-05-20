@@ -57,6 +57,12 @@ export default function Importacoes() {
   const [op12Guia, setOp12Guia] = useState('');
   const [op12GuiaPrestador, setOp12GuiaPrestador] = useState('');
 
+  // OP13 / OP14 parameters
+  const [op13DataFim, setOp13DataFim] = useState('');
+  const [op13CodPrestador, setOp13CodPrestador] = useState('');
+  const [op14NumeroLote, setOp14NumeroLote] = useState('');
+  const [op14CodPrestador, setOp14CodPrestador] = useState('');
+
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
 
@@ -201,7 +207,7 @@ export default function Importacoes() {
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
-    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api'].includes(importRotina);
+    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote'].includes(importRotina);
 
     if (!isIpasgoSpecial && (importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
       alert("Selecione pelo menos uma carteirinha/paciente.");
@@ -238,10 +244,40 @@ export default function Importacoes() {
           finalParams = JSON.stringify(ipasgoParams);
         }
       } else if (selectedConvenio === '6' && ['6', 'op6_check_baixados'].includes(finalRotina)) {
-        finalParams = JSON.stringify({
+        let assignedIdLoteInterno = null;
+        try {
+          // 1. Verificar se o numero_lote já existe na tabela lotes_convenio
+          const resAllLotes = await api.get(`/lotes/?id_convenio=${selectedConvenio}&limit=200`);
+          const allLotes = resAllLotes.data.data;
+          const existingLote = allLotes.find(l => String(l.numero_lote) === String(op6LoteId));
+          
+          if (existingLote) {
+            // Lote já existe, usar ele diretamente
+            assignedIdLoteInterno = existingLote.id_lote;
+            alert(`Lote ${op6LoteId} já existe (ID Interno: ${existingLote.id_lote}). Os itens serão atualizados neste lote.`);
+          } else {
+            // 2. Se não existe, verificar se há lotes vazios (Processando, sem numero_lote)
+            const pendingLotes = allLotes.filter(l => !l.numero_lote && l.status === 'Processando');
+            if (pendingLotes.length > 0) {
+              const pending = pendingLotes[0];
+              const confirmMsg = `Lote ${op6LoteId} não encontrado no sistema.\nExiste um lote em processamento sem número (ID Interno: ${pending.id_lote}, Fim: ${pending.data_fim || '?'}).\nDeseja atribuir o número ${op6LoteId} a este lote?`;
+              if (window.confirm(confirmMsg)) {
+                assignedIdLoteInterno = pending.id_lote;
+              }
+            }
+            // 3. Se não atribuiu a nenhum, o Worker criará automaticamente
+          }
+        } catch (e) {
+          console.error("Erro ao checar lotes:", e);
+        }
+
+        const paramsObj = {
           loteId: op6LoteId,
-          codigoPrestador: op6CodigoPrestador
-        });
+          codigoPrestador: op6CodigoPrestador || (currentConvenioObj?.codigo_referenciado || '').trim()
+        };
+        if (assignedIdLoteInterno) paramsObj.id_lote_interno = assignedIdLoteInterno;
+        finalParams = JSON.stringify(paramsObj);
+
       } else if (selectedConvenio === '6' && ['7', 'op7_fat_facplan'].includes(finalRotina)) {
         let dtRealizacaoFormatted = op7DataRealizacao;
         if (op7DataRealizacao) {
@@ -275,6 +311,23 @@ export default function Importacoes() {
           guia: op12Guia,
           GuiaPrestador: op12GuiaPrestador,
           numero_copias: 1
+        });
+      } else if (selectedConvenio === '6' && ['13', 'op13_criar_lote'].includes(finalRotina)) {
+        let dtFimFormatted = op13DataFim;
+        if (op13DataFim) {
+            const parts = op13DataFim.split('-');
+            if (parts.length === 3) {
+                dtFimFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+            }
+        }
+        finalParams = JSON.stringify({
+          data_fim: dtFimFormatted,
+          cod_prestador: op13CodPrestador || (currentConvenioObj?.codigo_referenciado || '').trim()
+        });
+      } else if (selectedConvenio === '6' && ['14', 'op14_cancelar_lote'].includes(finalRotina)) {
+        finalParams = JSON.stringify({
+          numero_lote: op14NumeroLote,
+          cod_prestador: op14CodPrestador || (currentConvenioObj?.codigo_referenciado || '').trim()
         });
       }
 
@@ -647,6 +700,61 @@ export default function Importacoes() {
                   placeholder="Ex: 00632220042617555801"
                   value={op12GuiaPrestador}
                   onChange={e => setOp12GuiaPrestador(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['13', 'op13_criar_lote'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Cód. Prestador Padrão: <span className="font-mono font-bold">{currentConvenioObj?.codigo_referenciado || 'N/A'}</span> (automático do convênio)
+                </div>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Fim *</label>
+                <Input
+                  type="date"
+                  value={op13DataFim}
+                  onChange={e => setOp13DataFim(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Cód. Prestador Opcional</label>
+                <Input
+                  type="text"
+                  placeholder="Deixar vazio p/ padrão"
+                  value={op13CodPrestador}
+                  onChange={e => setOp13CodPrestador(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['14', 'op14_cancelar_lote'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Cód. Prestador Padrão: <span className="font-mono font-bold">{currentConvenioObj?.codigo_referenciado || 'N/A'}</span> (automático do convênio)
+                </div>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Número do Lote *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 78949"
+                  value={op14NumeroLote}
+                  onChange={e => setOp14NumeroLote(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Cód. Prestador Opcional</label>
+                <Input
+                  type="text"
+                  placeholder="Deixar vazio p/ padrão"
+                  value={op14CodPrestador}
+                  onChange={e => setOp14CodPrestador(e.target.value)}
                 />
               </div>
             </>

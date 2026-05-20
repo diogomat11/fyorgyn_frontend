@@ -308,7 +308,7 @@ export default function Carteirinhas() {
             await api.post('/carteirinhas/', {
                 carteirinha: newCarteirinha.carteirinha,
                 paciente: newCarteirinha.paciente,
-                id_paciente: newCarteirinha.id_paciente ? parseInt(newCarteirinha.id_paciente) : null,
+                id_paciente: newCarteirinha.id_paciente || null,
                 codigo_beneficiario: newCarteirinha.codigo_beneficiario ? newCarteirinha.codigo_beneficiario : null,
                 status: newCarteirinha.status,
                 id_convenio: newCarteirinha.id_convenio || (filters.id_convenio ? parseInt(filters.id_convenio) : undefined)
@@ -412,7 +412,7 @@ export default function Carteirinhas() {
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-text-secondary mb-1">ID Paciente</label>
-                                    <Input type="number" value={newCarteirinha.id_paciente} onChange={(e) => setNewCarteirinha({ ...newCarteirinha, id_paciente: e.target.value })} placeholder="123" />
+                                    <Input type="text" value={newCarteirinha.id_paciente} onChange={(e) => setNewCarteirinha({ ...newCarteirinha, id_paciente: e.target.value })} placeholder="123 ou UUID" />
                                 </div>
                                 {isIpasgoSelected(newCarteirinha.id_convenio || filters.id_convenio) && (
                                     <div>

@@ -438,7 +438,7 @@ export default function BaseGuias() {
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDateTime(g.created_at)}</td>
-                                            <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">{paciente ? paciente.paciente || paciente.carteirinha : g.carteirinha_id}</td>
+                                            <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">{g.nome_paciente || g.carteirinha_id}</td>
                                             <td className="px-6 py-4 text-sm text-text-secondary font-mono bg-slate-900/30 rounded px-2 py-1 inline-block mt-2 whitespace-nowrap">{g.guia}</td>
                                             {activeTab === 'solicitacoes' ? (
                                                 <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDate(g.data_solicitacao)}</td>

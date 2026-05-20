@@ -14,6 +14,7 @@ export default function Conciliacao() {
     const [filtroPaciente, setFiltroPaciente] = useState('');
     const [filtroStatus, setFiltroStatus] = useState('');
     const [conciliando, setConciliando] = useState(false);
+    const [revertendo, setRevertendo] = useState(false);
     const [isLinked, setIsLinked] = useState(false);  // true when lote_ag already has a lote_convenio
 
     const [showEditModal, setShowEditModal] = useState(false);
@@ -84,11 +85,30 @@ export default function Conciliacao() {
         finally { setConciliando(false); }
     };
 
+    const handleReverter = async () => {
+        if (!selectedLoteAgendamento || !isLinked) return;
+        if (!confirm("Tem certeza que deseja desvincular este lote de agendamento do lote de faturamento? Todos os itens voltarão para 'Não Conciliado'.")) return;
+        setRevertendo(true);
+        try {
+            const res = await api.post('/conciliacao/reverter', { id_lote_ag: parseInt(selectedLoteAgendamento) });
+            setResultado(res.data);
+            setIsLinked(false);
+            setSelectedLoteConvenio('');
+            loadItens();
+        } catch (e) { alert(e.response?.data?.detail || "Erro ao reverter conciliação"); }
+        finally { setRevertendo(false); }
+    };
+
     const handleEditarItem = async (e) => {
         e.preventDefault();
         try {
-            const res = await api.put(`/conciliacao/editar-item/${editItem.id_faturamento_lote}`, editForm);
-            alert(res.data.message + (res.data.auto_conciliado ? ' (Reconciliado automaticamente!)' : ''));
+            if (editItem.id_faturamento_lote) {
+                const res = await api.put(`/conciliacao/editar-item/${editItem.id_faturamento_lote}`, editForm);
+                alert(res.data.message + (res.data.auto_conciliado ? ' (Reconciliado automaticamente!)' : ''));
+            } else {
+                const res = await api.put(`/conciliacao/editar-agendamento/${editItem.id_agendamento}`, { data: editForm.dataRealizacao, numero_guia: editForm.Guia, cod_procedimento_fat: editForm.cod_procedimento_fat });
+                alert(res.data.message);
+            }
             setShowEditModal(false);
             loadItens();
         } catch (e) { alert(e.response?.data?.detail || "Erro ao editar item"); }
@@ -112,7 +132,8 @@ export default function Conciliacao() {
         setManualAgItem(item); setShowManualAgModal(true); setLoadingFatCandidatos(true);
         try {
             const loteParam = selectedLoteConvenio ? `&id_lote_convenio=${selectedLoteConvenio}` : '';
-            const r = await api.get(`/conciliacao/candidatos-fat-por-guia?numero_guia=${item.numero_guia}${loteParam}`);
+            const agParam = item.id_agendamento ? `&id_agendamento=${item.id_agendamento}` : '';
+            const r = await api.get(`/conciliacao/candidatos-fat-por-guia?numero_guia=${item.numero_guia}${loteParam}${agParam}`);
             setFatCandidatos(r.data.data);
         } catch { alert("Erro ao buscar candidatos de faturamento"); }
         finally { setLoadingFatCandidatos(false); }
@@ -132,7 +153,7 @@ export default function Conciliacao() {
     const StatusBadge = ({ sv }) => {
         if (!sv) return <span className="text-slate-500 text-xs">-</span>;
         const cls = sv.apto ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
-        return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{sv.icone === 'V' ? <CheckCircle size={11}/> : <AlertTriangle size={11}/>} {sv.texto}</span>;
+        return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cls}`} title={sv.texto}>{sv.icone === 'V' ? <CheckCircle size={11}/> : <AlertTriangle size={11}/>} {sv.texto}</span>;
     };
 
     return (
@@ -170,10 +191,17 @@ export default function Conciliacao() {
                         </select>
                     </div>
                     <div className="flex items-end">
-                        <button onClick={handleConciliar} disabled={!selectedLoteConvenio || !selectedLoteAgendamento || conciliando}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50">
-                            {conciliando ? <><Loader2 size={16} className="animate-spin"/> Conciliando...</> : <><Link2 size={16}/> Conciliar</>}
-                        </button>
+                        {!isLinked ? (
+                            <button onClick={handleConciliar} disabled={!selectedLoteConvenio || !selectedLoteAgendamento || conciliando}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                                {conciliando ? <><Loader2 size={16} className="animate-spin"/> Conciliando...</> : <><Link2 size={16}/> Conciliar</>}
+                            </button>
+                        ) : (
+                            <button onClick={handleReverter} disabled={revertendo}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                                {revertendo ? <><Loader2 size={16} className="animate-spin"/> Revertendo...</> : <><XCircle size={16}/> Reverter Conciliação</>}
+                            </button>
+                        )}
                     </div>
                 </div>
                 {resultado && <div className="mt-4 p-3 bg-violet-500/10 border border-violet-500/20 rounded-lg text-sm text-violet-300">✅ {resultado.message}</div>}
@@ -235,9 +263,9 @@ export default function Conciliacao() {
                                     </td>
                                     <td className="px-3 py-2">
                                         <div className="flex gap-1">
-                                            {item.id_faturamento_lote && (
+                                            {(item.id_faturamento_lote || (item.status_verificacao && item.status_verificacao.fora_do_prazo)) && (
                                                 <button onClick={() => { setEditItem(item); setEditForm({ dataRealizacao: item.data || '', Guia: item.numero_guia || '', cod_procedimento_fat: item.cod_procedimento_fat || '' }); setShowEditModal(true); }}
-                                                    className="p-1 text-slate-400 hover:text-indigo-400 transition-colors" title="Editar"><Edit3 size={14}/></button>
+                                                    className={`p-1 transition-colors ${item.id_faturamento_lote ? 'text-slate-400 hover:text-indigo-400' : 'text-amber-400 hover:text-amber-300'}`} title={item.id_faturamento_lote ? "Editar Faturamento" : "Editar Agendamento (Fora do Prazo)"}><Edit3 size={14}/></button>
                                             )}
                                             {item.status_conciliacao !== 'Conciliado' && item.numero_guia && (
                                                 <button onClick={() => handleOpenManualAg(item)}
@@ -272,7 +300,7 @@ export default function Conciliacao() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                     <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl p-6">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-lg font-semibold text-slate-100">Editar Item de Faturamento</h3>
+                            <h3 className="text-lg font-semibold text-slate-100">{editItem.id_faturamento_lote ? "Editar Item de Faturamento" : "Editar Agendamento"}</h3>
                             <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
                         </div>
                         <form onSubmit={handleEditarItem} className="space-y-4">

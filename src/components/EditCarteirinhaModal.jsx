@@ -63,7 +63,7 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
             const payload = {
                 carteirinha: formData.carteirinha,
                 paciente: formData.paciente,
-                id_paciente: formData.id_paciente ? parseInt(formData.id_paciente) : null,
+                id_paciente: formData.id_paciente || null,
                 codigo_beneficiario: formData.codigo_beneficiario ? formData.codigo_beneficiario : null,
                 status: formData.status
             };
@@ -113,7 +113,7 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
                         <div>
                             <label className="block text-sm font-medium text-text-secondary mb-1">ID Paciente</label>
                             <Input
-                                type="number"
+                                type="text"
                                 value={formData.id_paciente}
                                 onChange={e => setFormData({ ...formData, id_paciente: e.target.value })}
                                 placeholder="123"

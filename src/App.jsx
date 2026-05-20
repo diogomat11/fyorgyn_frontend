@@ -12,6 +12,8 @@ import Prioridades from './pages/Prioridades';
 import GestaoLotes from './pages/GestaoLotes';
 import LotesAgendamentos from './pages/LotesAgendamentos';
 import Conciliacao from './pages/Conciliacao';
+import ProtocoloFichas from './pages/ProtocoloFichas';
+import GestaoTerapias from './pages/GestaoTerapias';
 import MainLayout from './layouts/MainLayout';
 
 function PrivateRoute({ children }) {
@@ -79,6 +81,12 @@ export default function App() {
           </PrivateRoute>
         } />
 
+        <Route path="/terapias" element={
+          <PrivateRoute>
+            <GestaoTerapias />
+          </PrivateRoute>
+        } />
+
         {/* Faturamento - Sub-rotas */}
         <Route path="/faturamento/lotes" element={
           <PrivateRoute>
@@ -95,6 +103,12 @@ export default function App() {
         <Route path="/faturamento/conciliacao" element={
           <PrivateRoute>
             <Conciliacao />
+          </PrivateRoute>
+        } />
+
+        <Route path="/faturamento/protocolo" element={
+          <PrivateRoute>
+            <ProtocoloFichas />
           </PrivateRoute>
         } />
 

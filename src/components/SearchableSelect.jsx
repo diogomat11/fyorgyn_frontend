@@ -18,21 +18,21 @@ export default function SearchableSelect({
 
     // Initial filter on open or options change
     useEffect(() => {
-        // Limit to 50 items for performance
-        setFilteredOptions(options.slice(0, 50));
+        // Limit to 1500 items for performance
+        setFilteredOptions(options.slice(0, 1500));
     }, [options]);
 
     // Handle search filtering
     useEffect(() => {
         if (!search) {
-            setFilteredOptions(options.slice(0, 50));
+            setFilteredOptions(options.slice(0, 1500));
             return;
         }
         const lowerSearch = search.toLowerCase();
         const filtered = options.filter(opt =>
             String(opt[labelKey]).toLowerCase().includes(lowerSearch) ||
             String(opt[valueKey]).toLowerCase().includes(lowerSearch)
-        ).slice(0, 50);
+        ).slice(0, 1500);
         setFilteredOptions(filtered);
     }, [search, options, labelKey, valueKey]);
 
