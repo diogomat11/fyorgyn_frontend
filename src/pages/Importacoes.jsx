@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Play, Filter, RefreshCcw, Trash2, Clock, CheckCircle, AlertCircle, XCircle, Users, Activity } from 'lucide-react';
+import { Play, Filter, RefreshCcw, Trash2, Clock, CheckCircle, AlertCircle, XCircle, Users, Activity, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { formatDateTime, maskCarteirinha, validateCarteirinha } from '../utils/formatters';
 import SearchableSelect from '../components/SearchableSelect';
 
@@ -62,6 +62,17 @@ export default function Importacoes() {
   const [op13CodPrestador, setOp13CodPrestador] = useState('');
   const [op14NumeroLote, setOp14NumeroLote] = useState('');
   const [op14CodPrestador, setOp14CodPrestador] = useState('');
+
+  // Excel Batch Upload State (Bradesco Fature)
+  const [excelFile, setExcelFile] = useState(null);
+  const [excelDataInicio, setExcelDataInicio] = useState('');
+  const [excelDataFim, setExcelDataFim] = useState('');
+  const [excelRegAns, setExcelRegAns] = useState('');
+  const [excelLogin, setExcelLogin] = useState('diogomat11');
+  const [excelPassword, setExcelPassword] = useState('Artju2020@');
+  const [excelCodPrestador, setExcelCodPrestador] = useState('225529');
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const excelFileRef = useRef(null);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
@@ -400,6 +411,74 @@ export default function Importacoes() {
     }
   };
 
+  // ── Upload Excel Batch (Bradesco Fature) ──
+  const handleUploadExcelBatch = async () => {
+    if (!excelFile) {
+      alert('Selecione um arquivo Excel (.xlsx) para importar.');
+      return;
+    }
+    if (!selectedConvenio) {
+      alert('Selecione o convênio antes de importar.');
+      return;
+    }
+
+    const confirmMsg = `Importar planilha "${excelFile.name}" como lote de Jobs OP1 para o convênio ${currentConvenioObj?.nome || selectedConvenio}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setUploadingExcel(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', excelFile);
+      formData.append('id_convenio', selectedConvenio);
+      if (excelDataInicio) formData.append('dataInicio', excelDataInicio);
+      if (excelDataFim) formData.append('dataFim', excelDataFim);
+      if (excelRegAns) formData.append('regAns', excelRegAns);
+      if (excelLogin) formData.append('login', excelLogin);
+      if (excelPassword) formData.append('password', excelPassword);
+      if (excelCodPrestador) formData.append('cod_prestador', excelCodPrestador);
+
+      const res = await api.post('/jobs/import/fature-batch', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      alert(`${res.data.message} — ${res.data.count} job(s) criado(s).`);
+      setExcelFile(null);
+      setExcelDataInicio('');
+      setExcelDataFim('');
+      setExcelRegAns('');
+      setExcelCodPrestador('225529');
+      if (excelFileRef.current) excelFileRef.current.value = '';
+      fetchJobs();
+    } catch (e) {
+      alert('Erro no upload: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setUploadingExcel(false);
+    }
+  };
+
+  // ── Export Excel (Fature Jobs) ──
+  const handleExportFature = async () => {
+    if (!selectedConvenio) {
+      alert('Selecione um convênio para exportar.');
+      return;
+    }
+    try {
+      const res = await api.get(`/jobs/export/fature?id_convenio=${selectedConvenio}`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `jobs_fature_${selectedConvenio}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Erro ao exportar: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
   const getStatusBadge = (job) => {
     switch (job.status) {
       case 'success': return <Badge variant="success">Sucesso</Badge>;
@@ -485,15 +564,22 @@ export default function Importacoes() {
 
           <div className="md:col-span-3">
             <label className="block text-sm font-medium text-text-secondary mb-1">Tipo de Importação</label>
-            <Select
-              value={importType}
-              onChange={e => { setImportType(e.target.value); setSelectedCarteirinhas([]); }}
-            >
-              <option value="single">Única</option>
-              <option value="multiple">Múltipla</option>
-              <option value="all">Todos</option>
-              <option value="temp">Paciente Temporário</option>
-            </Select>
+            {importRotina === '1_fature' ? (
+              <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-sm text-indigo-400 font-medium h-[42px] flex items-center justify-center">
+                📊 Lote Excel (Automático)
+              </div>
+            ) : (
+              <Select
+                value={importType}
+                onChange={e => { setImportType(e.target.value); setSelectedCarteirinhas([]); }}
+              >
+                <option value="single">Única</option>
+                <option value="multiple">Múltipla</option>
+                <option value="all">Todos</option>
+                <option value="temp">Paciente Temporário</option>
+                <option value="excel_batch">📊 Upload Excel (Lote)</option>
+              </Select>
+            )}
           </div>
 
           <div className="md:col-span-3">
@@ -760,7 +846,73 @@ export default function Importacoes() {
             </>
           )}
 
-          {importType === 'temp' ? (
+          {(importType === 'excel_batch' || importRotina === '1_fature') ? (
+            <>
+              <div className="md:col-span-12">
+                <div className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <FileSpreadsheet size={14} />
+                  Upload de planilha Excel (.xlsx) para criar jobs OP1 em lote. A planilha deve conter coluna <strong>"Guia"</strong> (e opcionalmente <strong>"Paciente"</strong>).
+                </div>
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Arquivo Excel (.xlsx) *</label>
+                <input
+                  ref={excelFileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={e => setExcelFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-text-secondary file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 file:cursor-pointer cursor-pointer bg-surface border border-border rounded-lg transition-colors"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Início</label>
+                <Input type="date" value={excelDataInicio} onChange={e => setExcelDataInicio(e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Fim</label>
+                <Input type="date" value={excelDataFim} onChange={e => setExcelDataFim(e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Reg ANS</label>
+                <Input type="text" placeholder="Ex: 359017" value={excelRegAns} onChange={e => setExcelRegAns(e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <Button
+                  onClick={handleUploadExcelBatch}
+                  disabled={uploadingExcel || !excelFile}
+                  className="w-full h-[42px]"
+                >
+                  {uploadingExcel ? (
+                    <><RefreshCcw size={16} className="animate-spin" /> Enviando...</>
+                  ) : (
+                    <><Upload size={16} /> Importar Lote</>
+                  )}
+                </Button>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Usuário Fature (Login) *</label>
+                <Input type="text" value={excelLogin} onChange={e => setExcelLogin(e.target.value)} />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Senha Fature *</label>
+                <Input type="password" value={excelPassword} onChange={e => setExcelPassword(e.target.value)} />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Cód. Prestador *</label>
+                <Input type="text" value={excelCodPrestador} onChange={e => setExcelCodPrestador(e.target.value)} />
+              </div>
+              <div className="md:col-span-3"></div>
+
+              {excelFile && (
+                <div className="md:col-span-12">
+                  <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                    <FileSpreadsheet size={14} />
+                    Arquivo selecionado: <strong>{excelFile.name}</strong> ({(excelFile.size / 1024).toFixed(1)} KB)
+                  </div>
+                </div>
+              )}
+            </>
+          ) : importType === 'temp' ? (
             <>
               <div className="md:col-span-3">
                 <label className="block text-sm font-medium text-text-secondary mb-1">Carteirinha (Temp)</label>
@@ -873,11 +1025,13 @@ export default function Importacoes() {
             )
           )}
 
-          <div className="md:col-span-2">
-            <Button onClick={handleCreateJob} className="w-full h-[42px]">
-              <Play size={16} /> Criar
-            </Button>
-          </div>
+          {(importType !== 'excel_batch' && importRotina !== '1_fature') && (
+            <div className="md:col-span-2">
+              <Button onClick={handleCreateJob} className="w-full h-[42px]">
+                <Play size={16} /> Criar
+              </Button>
+            </div>
+          )}
 
         </div>
       </Card>
@@ -907,6 +1061,17 @@ export default function Importacoes() {
           <div className="w-40">
             <label className="block text-xs font-semibold text-text-secondary mb-1">Fim</label>
             <Input type="date" value={filters.created_at_end} onChange={e => { setFilters({ ...filters, created_at_end: e.target.value }); setPage(1); }} className="py-1.5 text-sm" />
+          </div>
+          <div className="ml-auto">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportFature}
+              title="Exportar todos os Jobs deste convênio para Excel"
+              className="flex items-center gap-1.5"
+            >
+              <Download size={14} /> Exportar Excel
+            </Button>
           </div>
         </div>
 
