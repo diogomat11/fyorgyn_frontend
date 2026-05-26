@@ -240,7 +240,7 @@ export default function BaseGuias() {
         try {
             await api.post('/jobs/', {
                 type: 'single',
-                carteirinha_ids: [guia.carteirinha_id],
+                carteirinha_ids: guia.carteirinha_id ? [guia.carteirinha_id] : null,
                 id_convenio: guia.id_convenio,
                 rotina: guia.id_convenio === 6 ? '12' : '5',
                 params: JSON.stringify({
