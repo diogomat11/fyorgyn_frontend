@@ -19,11 +19,12 @@ const Login = () => {
 
         try {
             const response = await api.post('/auth/login', { access_key: accessKey.trim() });
-            const { token, username } = response.data;
+            const { token, username, is_admin } = response.data;
 
             // Save to localStorage
             localStorage.setItem('token', token);
             localStorage.setItem('username', username);
+            localStorage.setItem('is_admin', is_admin ? 'true' : 'false');
 
             // Redirect
             navigate('/');

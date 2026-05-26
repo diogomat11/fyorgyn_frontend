@@ -21,6 +21,13 @@ function PrivateRoute({ children }) {
   return token ? <MainLayout>{children}</MainLayout> : <Navigate to="/login" />;
 }
 
+function AdminRoute({ children }) {
+  const token = localStorage.getItem('token');
+  const isAdmin = localStorage.getItem('is_admin') === 'true';
+  if (!token) return <Navigate to="/login" />;
+  return isAdmin ? <MainLayout>{children}</MainLayout> : <Navigate to="/" replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -76,9 +83,9 @@ export default function App() {
         } />
 
         <Route path="/prioridades" element={
-          <PrivateRoute>
+          <AdminRoute>
             <Prioridades />
-          </PrivateRoute>
+          </AdminRoute>
         } />
 
         <Route path="/terapias" element={

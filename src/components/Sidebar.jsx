@@ -7,6 +7,7 @@ export default function Sidebar() {
     const navigate = useNavigate();
     const isActive = (path) => location.pathname === path ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50';
     const username = localStorage.getItem('username') || 'Usuário';
+    const isAdmin = localStorage.getItem('is_admin') === 'true';
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -62,9 +63,11 @@ export default function Sidebar() {
                 <Link to="/logs" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/logs')}`}>
                     <Activity size={18} /> Logs
                 </Link>
-                <Link to="/prioridades" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/prioridades')}`}>
-                    <Zap size={18} /> Prioridades
-                </Link>
+                {isAdmin && (
+                    <Link to="/prioridades" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/prioridades')}`}>
+                        <Zap size={18} /> Prioridades
+                    </Link>
+                )}
                 <div className="mt-2 mb-2">
                     <div className="flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider">
                         <Layers size={16} /> Faturamento

@@ -225,6 +225,13 @@ export default function Importacoes() {
       return;
     }
 
+    if (selectedConvenio === '6' && ['11', 'op11_import_guias_api'].includes(importRotina)) {
+      if (!op11StartDate && !op11EndDate && !op11Beneficiario && !op11Guia && selectedCarteirinhas.length === 0) {
+        alert("Para criar o job da OP11, informe ao menos um parâmetro: intervalo de datas, guia ou carteirinha.");
+        return;
+      }
+    }
+
     if (importType === 'all' && !confirm("Deseja processar TODAS as carteirinhas?")) return;
 
     if (!selectedConvenio) {
