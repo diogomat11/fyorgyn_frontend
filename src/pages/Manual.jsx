@@ -12,7 +12,7 @@ const manualSections = [
             <div className="space-y-4">
                 <h2 className="text-2xl font-bold text-text-primary">Manual do Usuário</h2>
                 <p className="text-text-secondary">
-                    Bem-vindo ao manual de utilização do sistema <strong>Agenda Hub Basic</strong>.
+                    Bem-vindo ao manual de utilização do sistema <strong>FyorGyn - Plataforma Operacional para Clínicas</strong>.
                     Este guia foi criado para orientar você em todas as operações disponíveis na plataforma, com passo a passo claro e detalhado.
                 </p>
                 <div className="bg-blue-500/10 border-l-4 border-blue-500 p-4 rounded text-blue-400">

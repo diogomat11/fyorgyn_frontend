@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, Activity, LogOut, Table, BookOpen, Calendar, Zap, Layers, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Activity, LogOut, Table, BookOpen, Calendar, Zap, Layers, Sparkles, Key } from 'lucide-react';
 
 export default function Sidebar() {
     const location = useLocation();
@@ -18,8 +18,8 @@ export default function Sidebar() {
     return (
         <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-screen fixed left-0 top-0">
             <div className="p-6">
-                <div className="font-bold text-xl text-slate-100 tracking-tight">Fyorgyn</div>
-                <div className="text-xs text-slate-500 mt-1">By Baldurrok</div>
+                <div className="font-bold text-xl text-slate-100 tracking-tight">FyorGyn</div>
+                <div className="text-[10px] text-slate-500 mt-1">Plataforma Operacional para Clínicas</div>
             </div>
 
             <div className="px-6 py-2">
@@ -64,9 +64,14 @@ export default function Sidebar() {
                     <Activity size={18} /> Logs
                 </Link>
                 {isAdmin && (
-                    <Link to="/prioridades" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/prioridades')}`}>
-                        <Zap size={18} /> Prioridades
-                    </Link>
+                    <>
+                        <Link to="/prioridades" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/prioridades')}`}>
+                            <Zap size={18} /> Prioridades
+                        </Link>
+                        <Link to="/credenciais" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/credenciais')}`}>
+                            <Key size={18} /> Credenciais
+                        </Link>
+                    </>
                 )}
                 <div className="mt-2 mb-2">
                     <div className="flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider">

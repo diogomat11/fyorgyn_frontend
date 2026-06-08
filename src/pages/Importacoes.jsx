@@ -246,7 +246,7 @@ export default function Importacoes() {
       let finalParams = null;
       let finalRotina = importRotina || '1'; // Default to Consulta if empty
 
-      if (finalRotina === '2' || finalRotina === 'captura') {
+      if (finalRotina === '2' || finalRotina === 'captura' || finalRotina === 'op2_captura') {
         if (targetGuiasStr.trim()) {
           const guiasArray = targetGuiasStr.split(',').map(g => g.trim()).filter(g => g);
           finalParams = JSON.stringify({ guias: guiasArray });
@@ -617,7 +617,7 @@ export default function Importacoes() {
               ))}
             </Select>
           </div>
-          {(importRotina === '2' || importRotina === 'captura') && (
+          {(importRotina === '2' || importRotina === 'captura' || importRotina === 'op2_captura') && (
             <div className="md:col-span-6">
               <label className="block text-sm font-medium text-text-secondary mb-1">Guias Alvo (Separado por vírgula)</label>
               <Input

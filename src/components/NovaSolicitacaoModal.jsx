@@ -6,10 +6,9 @@ import Button from './ui/Button';
 import { Input, Select } from './ui/Input';
 
 const TIPOS_ANEXO = [
-    { value: 'relatorio_clinico', label: 'Relatório Clínico' },
-    { value: 'relatorio_medico', label: 'Relatório Médico' },
-    { value: 'plano_terapeutico', label: 'Plano Terapêutico' },
-    { value: 'justificativa_clinica', label: 'Justificativa Clínica' },
+    { value: 'Relatório Médico', label: 'Relatório Médico' },
+    { value: 'PTS/Relatório Clínico', label: 'PTS/Relatório Clínico' },
+    { value: 'Avaliação Inicial', label: 'Avaliação Inicial' },
 ];
 
 export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
@@ -17,11 +16,16 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
     const [convenios, setConvenios] = useState([]);
     const [carteirinhas, setCarteirinhas] = useState([]);
     const [procedimentosDisponiveis, setProcedimentosDisponiveis] = useState([]);
+    const [profissionais, setProfissionais] = useState([]);
+    const [medicos, setMedicos] = useState([]);
 
     const [formData, setFormData] = useState({
         id_convenio: '',
         carteirinha_id: '',
-        observacao: ''
+        observacao: '',
+        id_profissional: '',
+        medico_mesmo_profissional: true,
+        id_medico: ''
     });
 
     // Múltiplos procedimentos
@@ -35,8 +39,17 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
     useEffect(() => {
         if (isOpen) {
             api.get('/convenios/').then(res => setConvenios(res.data)).catch(console.error);
+            api.get('/agendamentos/profissionais?tipo=profissional').then(res => setProfissionais(res.data)).catch(console.error);
+            api.get('/agendamentos/profissionais?tipo=medico').then(res => setMedicos(res.data)).catch(console.error);
             // Reset form
-            setFormData({ id_convenio: '', carteirinha_id: '', observacao: '' });
+            setFormData({ 
+                id_convenio: '', 
+                carteirinha_id: '', 
+                observacao: '',
+                id_profissional: '',
+                medico_mesmo_profissional: true,
+                id_medico: ''
+            });
             setProcedimentos([{ codigo: '', qtde: 1 }]);
             setAnexos([]);
         }
@@ -74,7 +87,7 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
     };
 
     const addAnexo = () => {
-        setAnexos([...anexos, { tipo: 'relatorio_clinico', file: null }]);
+        setAnexos([...anexos, { tipo: 'Relatório Médico', file: null }]);
     };
 
     const removeAnexo = (index) => {
@@ -91,20 +104,28 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
         e.preventDefault();
 
         const validProcedimentos = procedimentos.filter(p => p.codigo);
-        if (!formData.id_convenio || !formData.carteirinha_id || validProcedimentos.length === 0) {
-            alert('Preencha os campos obrigatórios (Convênio, Paciente e pelo menos 1 Procedimento).');
+        if (!formData.id_convenio || !formData.carteirinha_id || !formData.id_profissional || validProcedimentos.length === 0) {
+            alert('Preencha os campos obrigatórios (Convênio, Paciente, Profissional e pelo menos 1 Procedimento).');
+            return;
+        }
+
+        if (!formData.medico_mesmo_profissional && !formData.id_medico) {
+            alert('Por favor, selecione o Médico Solicitante.');
             return;
         }
 
         setLoading(true);
         try {
             const rotinaMap = {
-                6: '1', // IPASGO
-                3: '1',
-                7: '1'
+                1: 'op1_solicitar_autorizacao', // Bradesco
+                2: 'op1_consulta',             // Unimed Anapolis
+                3: 'op1_consulta',             // Unimed Goiania
+                6: 'op1_autorizar_facplan',    // IPASGO
+                8: 'op1_consulta',             // Sulamerica
+                9: 'op1_consulta'              // Amil
             };
 
-            const selectedRotina = rotinaMap[formData.id_convenio] || '1';
+            const selectedRotina = rotinaMap[formData.id_convenio] || 'op1_solicitar_autorizacao';
 
             const payload = {
                 type: 'single',
@@ -112,6 +133,9 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
                 id_convenio: parseInt(formData.id_convenio),
                 carteirinha_ids: [parseInt(formData.carteirinha_id)],
                 params: JSON.stringify({
+                    id_profissional: parseInt(formData.id_profissional),
+                    id_medico: formData.medico_mesmo_profissional ? null : parseInt(formData.id_medico),
+                    medico_mesmo_profissional: formData.medico_mesmo_profissional,
                     procedimentos: validProcedimentos.map(p => ({
                         codigo_procedimento: p.codigo,
                         qtde_solicitada: parseInt(p.qtde) || 1
@@ -184,6 +208,56 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
                             placeholder={formData.id_convenio ? "Selecione o Paciente..." : "Selecione o convênio primeiro"}
                             disabled={!formData.id_convenio}
                         />
+                    </div>
+
+                    {/* Profissional */}
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Profissional (Terapeuta) *</label>
+                        <Select
+                            value={formData.id_profissional}
+                            onChange={(e) => setFormData({ ...formData, id_profissional: e.target.value })}
+                            required
+                        >
+                            <option value="">Selecione o Profissional</option>
+                            {profissionais.map(p => (
+                                <option key={p.id_profissional} value={p.id_profissional}>{p.nome}</option>
+                            ))}
+                        </Select>
+                    </div>
+
+                    {/* Médico Solicitante */}
+                    <div className="bg-slate-900/30 rounded-lg p-4 border border-border/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <label className="block text-sm font-medium text-text-secondary">Médico Solicitante</label>
+                            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.medico_mesmo_profissional}
+                                    onChange={(e) => setFormData({ 
+                                        ...formData, 
+                                        medico_mesmo_profissional: e.target.checked,
+                                        id_medico: e.target.checked ? '' : formData.id_medico
+                                    })}
+                                    className="rounded border-slate-700 text-primary focus:ring-primary bg-slate-900"
+                                />
+                                Médico é o próprio profissional
+                            </label>
+                        </div>
+                        
+                        {!formData.medico_mesmo_profissional && (
+                            <div>
+                                <Select
+                                    value={formData.id_medico}
+                                    onChange={(e) => setFormData({ ...formData, id_medico: e.target.value })}
+                                    required={!formData.medico_mesmo_profissional}
+                                >
+                                    <option value="">Selecione o Médico</option>
+                                    {medicos.map(m => (
+                                        <option key={m.id_profissional} value={m.id_profissional}>{m.nome}</option>
+                                    ))}
+                                </Select>
+                            </div>
+                        )}
                     </div>
 
                     {/* Procedimentos */}

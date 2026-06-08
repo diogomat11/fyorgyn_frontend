@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Calendar, Plus, X, Search, Eye, Package, Loader2 } from 'lucide-react';
+import { Calendar, Plus, X, Search, Eye, Package, Loader2, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 export default function LotesAgendamentos() {
     const [convenios, setConvenios] = useState([]);
@@ -21,6 +21,7 @@ export default function LotesAgendamentos() {
 
     // Filtro de itens
     const [filtroPaciente, setFiltroPaciente] = useState('');
+    const [autoEnvio, setAutoEnvio] = useState(false);
 
     useEffect(() => {
         loadConvenios();
@@ -96,6 +97,22 @@ export default function LotesAgendamentos() {
         return !filtroPaciente || item.paciente?.toLowerCase().includes(filtroPaciente.toLowerCase());
     });
 
+    const handleExcluirLote = async (lote) => {
+        const msg = lote.id_lote_convenio 
+            ? `O lote #${lote.id_lote_ag} está CONCILIADO. A exclusão reverterá a conciliação local e no portal (se Envio Automático estiver ativo). Confirmar exclusão?`
+            : `Tem certeza que deseja excluir o lote de agendamento #${lote.id_lote_ag}? Todos os agendamentos deste lote ficarão livres para novos lotes.`;
+        if (!confirm(msg)) return;
+        try {
+            const res = await api.delete(`/conciliacao/lote-agendamento/${lote.id_lote_ag}`, {
+                params: { auto_envio: autoEnvio }
+            });
+            alert(res.data.message);
+            loadLotes();
+        } catch (error) {
+            alert(error.response?.data?.detail || "Erro ao excluir lote de agendamento");
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-2xl">
             {/* Header */}
@@ -111,6 +128,17 @@ export default function LotesAgendamentos() {
                 </div>
                 
                 <div className="flex items-center gap-4">
+                    {/* Toggle Envio Automático */}
+                    {selectedConvenio === '6' && (
+                        <button
+                            onClick={() => setAutoEnvio(!autoEnvio)}
+                            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${autoEnvio ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                            title="Envio automático de reversão ao portal ao excluir lote conciliado"
+                        >
+                            {autoEnvio ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                            {autoEnvio ? "Envio Automático" : "Envio Manual"}
+                        </button>
+                    )}
                     <select
                         value={selectedConvenio}
                         onChange={(e) => setSelectedConvenio(e.target.value)}
@@ -179,12 +207,21 @@ export default function LotesAgendamentos() {
                                         {lote.created_at ? new Date(lote.created_at).toLocaleDateString('pt-BR') : '-'}
                                     </td>
                                     <td className="px-4 py-3">
-                                        <button
-                                            onClick={() => handleVerItens(lote)}
-                                            className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 text-xs"
-                                        >
-                                            <Eye size={14} /> Ver Itens
-                                        </button>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                onClick={() => handleVerItens(lote)}
+                                                className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 text-xs"
+                                            >
+                                                <Eye size={14} /> Ver Itens
+                                            </button>
+                                            <button
+                                                onClick={() => handleExcluirLote(lote)}
+                                                className="flex items-center gap-1 text-rose-400 hover:text-rose-300 text-xs font-medium"
+                                                title="Excluir Lote de Agendamento"
+                                            >
+                                                <Trash2 size={14} /> Excluir
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

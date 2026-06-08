@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { GitMerge, X, CheckCircle, AlertTriangle, XCircle, Edit3, Link2, Search, Loader2 } from 'lucide-react';
+import { GitMerge, X, CheckCircle, AlertTriangle, XCircle, Edit3, Link2, Search, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 export default function Conciliacao() {
     const [convenios, setConvenios] = useState([]);
@@ -13,9 +13,11 @@ export default function Conciliacao() {
     const [loadingItens, setLoadingItens] = useState(false);
     const [filtroPaciente, setFiltroPaciente] = useState('');
     const [filtroStatus, setFiltroStatus] = useState('');
+    const [filtroVerificacao, setFiltroVerificacao] = useState('');
     const [conciliando, setConciliando] = useState(false);
     const [revertendo, setRevertendo] = useState(false);
     const [isLinked, setIsLinked] = useState(false);  // true when lote_ag already has a lote_convenio
+    const [autoEnvio, setAutoEnvio] = useState(false);
 
     const [showEditModal, setShowEditModal] = useState(false);
     const [editItem, setEditItem] = useState(null);
@@ -61,6 +63,7 @@ export default function Conciliacao() {
         try {
             const res = await api.get(`/conciliacao/itens/${selectedLoteAgendamento}?limit=10000`);
             setItens(res.data.data);
+            setFiltroVerificacao('');
             // Auto-detectar lote convênio já vinculado
             if (res.data.linked_lote_convenio_id) {
                 setSelectedLoteConvenio(res.data.linked_lote_convenio_id.toString());
@@ -77,7 +80,7 @@ export default function Conciliacao() {
         if (!selectedLoteConvenio || !selectedLoteAgendamento) { alert("Selecione ambos os lotes."); return; }
         setConciliando(true);
         try {
-            const res = await api.post('/conciliacao/conciliar', { id_lote_convenio: parseInt(selectedLoteConvenio), id_lote_ag: parseInt(selectedLoteAgendamento) });
+            const res = await api.post('/conciliacao/conciliar', { id_lote_convenio: parseInt(selectedLoteConvenio), id_lote_ag: parseInt(selectedLoteAgendamento), auto_envio: autoEnvio });
             setResultado(res.data);
             setIsLinked(true);  // Agora está vinculado
             loadItens();
@@ -90,7 +93,7 @@ export default function Conciliacao() {
         if (!confirm("Tem certeza que deseja desvincular este lote de agendamento do lote de faturamento? Todos os itens voltarão para 'Não Conciliado'.")) return;
         setRevertendo(true);
         try {
-            const res = await api.post('/conciliacao/reverter', { id_lote_ag: parseInt(selectedLoteAgendamento) });
+            const res = await api.post('/conciliacao/reverter', { id_lote_ag: parseInt(selectedLoteAgendamento), auto_envio: autoEnvio });
             setResultado(res.data);
             setIsLinked(false);
             setSelectedLoteConvenio('');
@@ -103,7 +106,7 @@ export default function Conciliacao() {
         e.preventDefault();
         try {
             if (editItem.id_faturamento_lote) {
-                const res = await api.put(`/conciliacao/editar-item/${editItem.id_faturamento_lote}`, editForm);
+                const res = await api.put(`/conciliacao/editar-item/${editItem.id_faturamento_lote}`, { ...editForm, auto_envio: autoEnvio });
                 alert(res.data.message + (res.data.auto_conciliado ? ' (Reconciliado automaticamente!)' : ''));
             } else {
                 const res = await api.put(`/conciliacao/editar-agendamento/${editItem.id_agendamento}`, { data: editForm.dataRealizacao, numero_guia: editForm.Guia, cod_procedimento_fat: editForm.cod_procedimento_fat });
@@ -123,7 +126,7 @@ export default function Conciliacao() {
 
     const handleConciliarManual = async (id_agendamento) => {
         try {
-            const r = await api.post('/conciliacao/conciliar-manual', { id_faturamento_lote: manualFatId, id_agendamento });
+            const r = await api.post('/conciliacao/conciliar-manual', { id_faturamento_lote: manualFatId, id_agendamento, auto_envio: autoEnvio });
             alert(r.data.message); setShowManualModal(false); loadItens();
         } catch (e) { alert(e.response?.data?.detail || "Erro na conciliação manual"); }
     };
@@ -141,12 +144,22 @@ export default function Conciliacao() {
 
     const handleConciliarManualAg = async (fatId) => {
         try {
-            const r = await api.post('/conciliacao/conciliar-manual-ag', { id_agendamento: manualAgItem.id_agendamento, id_faturamento_lote: fatId });
+            const r = await api.post('/conciliacao/conciliar-manual-ag', { id_agendamento: manualAgItem.id_agendamento, id_faturamento_lote: fatId, auto_envio: autoEnvio });
             alert(r.data.message); setShowManualAgModal(false); loadItens();
         } catch (e) { alert(e.response?.data?.detail || "Erro"); }
     };
 
-    const filteredItens = itens.filter(i => (!filtroPaciente || i.paciente?.toLowerCase().includes(filtroPaciente.toLowerCase())) && (!filtroStatus || i.status_conciliacao === filtroStatus));
+    const filteredItens = itens.filter(i => {
+        const matchesPaciente = !filtroPaciente || i.paciente?.toLowerCase().includes(filtroPaciente.toLowerCase());
+        const matchesStatus = !filtroStatus || i.status_conciliacao === filtroStatus;
+        let matchesVerificacao = true;
+        if (filtroVerificacao === 'apto') {
+            matchesVerificacao = i.status_verificacao?.texto === 'Apto a faturar';
+        } else if (filtroVerificacao === 'fora_prazo') {
+            matchesVerificacao = i.status_verificacao?.texto === 'Fora do período da guia';
+        }
+        return matchesPaciente && matchesStatus && matchesVerificacao;
+    });
     const totalConc = itens.filter(i => i.status_conciliacao === 'Conciliado').length;
     const totalPend = itens.filter(i => i.status_conciliacao === 'Não Conciliado').length;
 
@@ -167,7 +180,7 @@ export default function Conciliacao() {
                         <p className="text-sm text-slate-400">Selecione um lote de agendamento, depois vincule com um lote de convênio.</p>
                     </div>
                 </div>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-5 gap-4">
                     <div>
                         <label className="block text-xs text-slate-500 mb-1">Convênio</label>
                         <select value={selectedConvenio} onChange={e => setSelectedConvenio(e.target.value)} className="w-full bg-slate-800 border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2">
@@ -189,6 +202,17 @@ export default function Conciliacao() {
                             <option value="">Selecione o lote</option>
                             {lotesConvenio.map(l => <option key={l.id_lote} value={l.id_lote}>{l.numero_lote ? `Lote ${l.numero_lote}` : `#${l.id_lote}`} - {l.status}</option>)}
                         </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs text-slate-500 mb-1">Envio Automático</label>
+                        <button
+                            onClick={() => setAutoEnvio(!autoEnvio)}
+                            className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${autoEnvio ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                            title="Envio automático de atualizações via API ao conciliar/reverter"
+                        >
+                            {autoEnvio ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                            {autoEnvio ? "Ativado" : "Desativado"}
+                        </button>
                     </div>
                     <div className="flex items-end">
                         {!isLinked ? (
@@ -227,7 +251,12 @@ export default function Conciliacao() {
                 <div className="bg-slate-800 p-3 border-b border-slate-700 flex gap-3">
                     <input type="text" placeholder="Filtrar por paciente..." className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500 flex-1" value={filtroPaciente} onChange={e => setFiltroPaciente(e.target.value)} />
                     <select className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
-                        <option value="">Todos</option><option value="Conciliado">Conciliado</option><option value="Não Conciliado">Não Conciliado</option>
+                        <option value="">Status: Todos</option><option value="Conciliado">Conciliado</option><option value="Não Conciliado">Não Conciliado</option>
+                    </select>
+                    <select className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200" value={filtroVerificacao} onChange={e => setFiltroVerificacao(e.target.value)}>
+                        <option value="">Verificação: Todos</option>
+                        <option value="apto">Apto a Faturar</option>
+                        <option value="fora_prazo">Fora do Prazo da Guia</option>
                     </select>
                 </div>
             )}

@@ -15,6 +15,7 @@ import Conciliacao from './pages/Conciliacao';
 import ProtocoloFichas from './pages/ProtocoloFichas';
 import GestaoTerapias from './pages/GestaoTerapias';
 import MainLayout from './layouts/MainLayout';
+import Credenciais from './pages/Credenciais';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -85,6 +86,12 @@ export default function App() {
         <Route path="/prioridades" element={
           <AdminRoute>
             <Prioridades />
+          </AdminRoute>
+        } />
+
+        <Route path="/credenciais" element={
+          <AdminRoute>
+            <Credenciais />
           </AdminRoute>
         } />
 
