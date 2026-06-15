@@ -88,6 +88,19 @@ export default function Importacoes() {
     created_at_end: ''
   });
 
+  const carteirinhasOptions = React.useMemo(() => {
+    return carteirinhas.map(c => ({
+      value: c.id,
+      label: c.paciente ? `${c.paciente} (${c.carteirinha})` : c.carteirinha
+    }));
+  }, [carteirinhas]);
+
+  const datalistOptions = React.useMemo(() => {
+    return carteirinhas.map(c => (
+      <option key={c.id} value={c.paciente ? `${c.paciente} (${c.carteirinha})` : c.carteirinha} />
+    ));
+  }, [carteirinhas]);
+
   useEffect(() => {
     fetchCarteirinhas();
   }, [selectedConvenio]);
@@ -966,9 +979,7 @@ export default function Importacoes() {
                         }}
                       />
                       <datalist id="patients-list">
-                        {carteirinhas.map(c => (
-                          <option key={c.id} value={c.paciente ? `${c.paciente} (${c.carteirinha})` : c.carteirinha} />
-                        ))}
+                        {datalistOptions}
                       </datalist>
                       <Button
                         onClick={() => {
@@ -1019,10 +1030,7 @@ export default function Importacoes() {
                   </div>
                 ) : (
                   <SearchableSelect
-                    options={carteirinhas.map(c => ({
-                      value: c.id,
-                      label: c.paciente ? `${c.paciente} (${c.carteirinha})` : c.carteirinha
-                    }))}
+                    options={carteirinhasOptions}
                     value={selectedCarteirinhas[0] || ''}
                     onChange={(val) => setSelectedCarteirinhas(val ? [parseInt(val)] : [])}
                     placeholder="Selecione ou Cole o Paciente..."

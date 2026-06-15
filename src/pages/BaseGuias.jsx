@@ -112,6 +112,18 @@ export default function BaseGuias() {
 
     const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
 
+    const carteirinhasOptions = React.useMemo(() => {
+        const mapped = carteirinhas.map(c => ({
+            value: c.id,
+            label: c.paciente ? c.paciente : c.carteirinha,
+            id_convenio: c.id_convenio
+        }));
+        if (filters.id_convenio) {
+            return mapped.filter(c => c.id_convenio === parseInt(filters.id_convenio));
+        }
+        return [{ value: '', label: 'Todos os Pacientes' }, ...mapped];
+    }, [carteirinhas, filters.id_convenio]);
+
     useEffect(() => {
         api.get('/carteirinhas/?limit=1000').then(res => {
             setCarteirinhas(res.data.data || res.data);
@@ -312,13 +324,7 @@ export default function BaseGuias() {
                     <div className="flex-1 w-full md:w-auto min-w-[250px]">
                         <label className="block text-xs font-semibold text-text-secondary mb-1">Paciente / Carteirinha</label>
                         <SearchableSelect
-                            options={filters.id_convenio ? carteirinhas.filter(c => c.id_convenio === parseInt(filters.id_convenio)).map(c => ({
-                                value: c.id,
-                                label: c.paciente ? c.paciente : c.carteirinha
-                            })) : [{ value: '', label: 'Todos os Pacientes' }, ...carteirinhas.map(c => ({
-                                value: c.id,
-                                label: c.paciente ? c.paciente : c.carteirinha
-                            }))]}
+                            options={carteirinhasOptions}
                             value={filters.carteirinha_id}
                             onChange={(val) => {
                                 setFilters({ ...filters, carteirinha_id: val });

@@ -133,10 +133,12 @@ function ExtractionModal({ isOpen, onClose, onSave, editData, isExtracting, cart
         }
     };
 
-    const patientOptions = carteirinhas.map(c => ({
-        value: c.id_paciente,
-        label: c.paciente || `Sem Nome (ID: ${c.id_paciente})`
-    }));
+    const patientOptions = React.useMemo(() => {
+        return carteirinhas.map(c => ({
+            value: c.id_paciente,
+            label: c.paciente || `Sem Nome (ID: ${c.id_paciente})`
+        }));
+    }, [carteirinhas]);
 
     const handlePatientSelect = (val) => {
         const selected = carteirinhas.find(c => c.id_paciente === val);
@@ -321,6 +323,13 @@ export default function GestaoTerapias() {
     const [isPolling, setIsPolling] = useState(false);
     const limit = 50;
 
+    const carteirinhasOptions = React.useMemo(() => {
+        return carteirinhas.map(c => ({
+            value: c.id_paciente,
+            label: c.paciente || `Sem Nome (ID: ${c.id_paciente})`
+        }));
+    }, [carteirinhas]);
+
     const fetchRecords = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
@@ -497,10 +506,7 @@ export default function GestaoTerapias() {
                     <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1">Paciente</label>
                         <SearchableSelect
-                            options={carteirinhas.map(c => ({
-                                value: c.id_paciente,
-                                label: c.paciente || `Sem Nome (ID: ${c.id_paciente})`
-                            }))}
+                            options={carteirinhasOptions}
                             value={filterPaciente}
                             onChange={setFilterPaciente}
                             placeholder="Todos os pacientes..."
