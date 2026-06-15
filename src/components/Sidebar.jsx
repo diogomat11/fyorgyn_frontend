@@ -71,6 +71,9 @@ export default function Sidebar() {
                         <Link to="/credenciais" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/credenciais')}`}>
                             <Key size={18} /> Credenciais
                         </Link>
+                        <Link to="/usuarios" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/usuarios')}`}>
+                            <Users size={18} /> Usuários
+                        </Link>
                     </>
                 )}
                 <div className="mt-2 mb-2">

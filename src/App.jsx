@@ -16,6 +16,7 @@ import ProtocoloFichas from './pages/ProtocoloFichas';
 import GestaoTerapias from './pages/GestaoTerapias';
 import MainLayout from './layouts/MainLayout';
 import Credenciais from './pages/Credenciais';
+import Usuarios from './pages/Usuarios';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -92,6 +93,12 @@ export default function App() {
         <Route path="/credenciais" element={
           <AdminRoute>
             <Credenciais />
+          </AdminRoute>
+        } />
+
+        <Route path="/usuarios" element={
+          <AdminRoute>
+            <Usuarios />
           </AdminRoute>
         } />
 
