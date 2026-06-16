@@ -73,11 +73,11 @@ export default function useProtocoloLote() {
     }, []);
 
     // Upload files and create a new lote
-    const uploadFiles = useCallback(async (files) => {
+    const uploadFiles = useCallback(async (files, convenio = 'unimed_goiania') => {
         setUploading(true);
         setError(null);
         try {
-            const res = await protocoloApi.createLote(files);
+            const res = await protocoloApi.createLote(files, convenio);
             const newLoteId = res.data.lote_id;
             setActiveLoteId(newLoteId);
 

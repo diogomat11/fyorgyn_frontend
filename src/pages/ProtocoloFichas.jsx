@@ -44,6 +44,7 @@ export default function ProtocoloFichas() {
     const [showConfig, setShowConfig] = useState(false);
     const [activeTab, setActiveTab] = useState('importacao'); // 'importacao' | 'lotes'
     const [showHistory, setShowHistory] = useState(false);
+    const [convenio, setConvenio] = useState('unimed_goiania');
 
     // Fetch lotes on mount
     useEffect(() => {
@@ -60,7 +61,7 @@ export default function ProtocoloFichas() {
 
     const handleUpload = async (files) => {
         try {
-            await uploadFiles(files);
+            await uploadFiles(files, convenio);
             setActiveTab('importacao');
         } catch {
             // Error already set in hook
@@ -120,7 +121,7 @@ export default function ProtocoloFichas() {
             {/* Header */}
             <div className="flex justify-between items-center border-b border-border pb-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-text-primary">Protocolo — Fichas</h1>
+                    <h1 className="text-2xl font-bold text-text-primary">Protocolo SADT</h1>
                     <span className="text-text-secondary text-sm">
                         Extração inteligente de guias médicas via Gemini AI
                     </span>
@@ -215,11 +216,26 @@ export default function ProtocoloFichas() {
 
                     {/* Upload Zone */}
                     {!activeLoteId && (
-                        <UploadZone
-                            onFilesSelected={handleUpload}
-                            disabled={uploading}
-                            maxFiles={100}
-                        />
+                        <div className="space-y-4 max-w-xl">
+                            <div className="bg-slate-800/40 border border-border rounded-lg p-4 flex flex-col md:flex-row md:items-center gap-3">
+                                <label className="text-sm font-semibold text-text-primary min-w-[120px]">
+                                    Convênio:
+                                </label>
+                                <select
+                                    value={convenio}
+                                    onChange={(e) => setConvenio(e.target.value)}
+                                    className="bg-slate-900 border border-border rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-blue-500 min-w-[200px]"
+                                >
+                                    <option value="unimed_goiania">Unimed Goiânia</option>
+                                    <option value="ipasgo">IPASGO</option>
+                                </select>
+                            </div>
+                            <UploadZone
+                                onFilesSelected={handleUpload}
+                                disabled={uploading}
+                                maxFiles={100}
+                            />
+                        </div>
                     )}
 
                     {/* Active lote processing indicator */}

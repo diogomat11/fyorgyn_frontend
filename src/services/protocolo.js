@@ -12,9 +12,10 @@ const protocoloApi = {
      * @param {File[]} files - Array of File objects
      * @returns {Promise<{lote_id: number, total_arquivos: number, status: string}>}
      */
-    createLote: (files) => {
+    createLote: (files, convenio = 'unimed_goiania') => {
         const formData = new FormData();
         files.forEach(file => formData.append('files', file));
+        formData.append('convenio', convenio);
         return api.post('/protocolo/lotes', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });

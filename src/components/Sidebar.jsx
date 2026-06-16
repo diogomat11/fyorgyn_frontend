@@ -91,7 +91,7 @@ export default function Sidebar() {
                             Conciliação
                         </Link>
                         <Link to="/faturamento/protocolo" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/protocolo' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Protocolo Fichas
+                            Protocolo SADT
                         </Link>
                     </div>
                 </div>
