@@ -12,6 +12,9 @@ export default function Conciliacao() {
     const [itens, setItens] = useState([]);
     const [loadingItens, setLoadingItens] = useState(false);
     const [filtroPaciente, setFiltroPaciente] = useState('');
+    const [filtroGuia, setFiltroGuia] = useState('');
+    const [filtroDataInicio, setFiltroDataInicio] = useState('');
+    const [filtroDataFim, setFiltroDataFim] = useState('');
     const [filtroStatus, setFiltroStatus] = useState('');
     const [filtroVerificacao, setFiltroVerificacao] = useState('');
     const [conciliando, setConciliando] = useState(false);
@@ -27,12 +30,14 @@ export default function Conciliacao() {
     const [manualFatId, setManualFatId] = useState(null);
     const [candidatos, setCandidatos] = useState([]);
     const [loadingCandidatos, setLoadingCandidatos] = useState(false);
+    const [candidatoDatas, setCandidatoDatas] = useState({});  // { id_agendamento: 'YYYY-MM-DD' }
 
     // Manual conciliation from agendamento side
     const [showManualAgModal, setShowManualAgModal] = useState(false);
     const [manualAgItem, setManualAgItem] = useState(null);
     const [fatCandidatos, setFatCandidatos] = useState([]);
     const [loadingFatCandidatos, setLoadingFatCandidatos] = useState(false);
+    const [fatCandidatoDatas, setFatCandidatoDatas] = useState({});  // { fatId: 'YYYY-MM-DD' }
 
     const [resultado, setResultado] = useState(null);
 
@@ -64,6 +69,11 @@ export default function Conciliacao() {
             const res = await api.get(`/conciliacao/itens/${selectedLoteAgendamento}?limit=10000`);
             setItens(res.data.data);
             setFiltroVerificacao('');
+            setFiltroPaciente('');
+            setFiltroGuia('');
+            setFiltroDataInicio('');
+            setFiltroDataFim('');
+            setFiltroStatus('');
             // Auto-detectar lote convênio já vinculado
             if (res.data.linked_lote_convenio_id) {
                 setSelectedLoteConvenio(res.data.linked_lote_convenio_id.toString());
@@ -119,47 +129,75 @@ export default function Conciliacao() {
 
     const handleOpenManual = async (fatId) => {
         setManualFatId(fatId); setShowManualModal(true); setLoadingCandidatos(true);
-        try { const r = await api.get(`/conciliacao/candidatos/${fatId}`); setCandidatos(r.data.data); }
+        setCandidatoDatas({});
+        try {
+            const r = await api.get(`/conciliacao/candidatos/${fatId}`);
+            setCandidatos(r.data.data);
+            // Initialize editable dates from each candidate
+            const initDatas = {};
+            r.data.data.forEach(c => { initDatas[c.id_agendamento] = c.data || ''; });
+            setCandidatoDatas(initDatas);
+        }
         catch { alert("Erro ao buscar candidatos"); }
         finally { setLoadingCandidatos(false); }
     };
 
     const handleConciliarManual = async (id_agendamento) => {
         try {
-            const r = await api.post('/conciliacao/conciliar-manual', { id_faturamento_lote: manualFatId, id_agendamento, auto_envio: autoEnvio });
+            const dataOverride = candidatoDatas[id_agendamento] || null;
+            const r = await api.post('/conciliacao/conciliar-manual', { id_faturamento_lote: manualFatId, id_agendamento, auto_envio: autoEnvio, data_realizacao: dataOverride });
             alert(r.data.message); setShowManualModal(false); loadItens();
         } catch (e) { alert(e.response?.data?.detail || "Erro na conciliação manual"); }
     };
 
     const handleOpenManualAg = async (item) => {
         setManualAgItem(item); setShowManualAgModal(true); setLoadingFatCandidatos(true);
+        setFatCandidatoDatas({});
         try {
             const loteParam = selectedLoteConvenio ? `&id_lote_convenio=${selectedLoteConvenio}` : '';
             const agParam = item.id_agendamento ? `&id_agendamento=${item.id_agendamento}` : '';
             const r = await api.get(`/conciliacao/candidatos-fat-por-guia?numero_guia=${item.numero_guia}${loteParam}${agParam}`);
             setFatCandidatos(r.data.data);
+            // Initialize editable dates: prefer agendamento date, fallback to fat date
+            const initDatas = {};
+            r.data.data.forEach(f => { initDatas[f.id] = item.data || f.dataRealizacao || ''; });
+            setFatCandidatoDatas(initDatas);
         } catch { alert("Erro ao buscar candidatos de faturamento"); }
         finally { setLoadingFatCandidatos(false); }
     };
 
     const handleConciliarManualAg = async (fatId) => {
         try {
-            const r = await api.post('/conciliacao/conciliar-manual-ag', { id_agendamento: manualAgItem.id_agendamento, id_faturamento_lote: fatId, auto_envio: autoEnvio });
+            const dataOverride = fatCandidatoDatas[fatId] || null;
+            const r = await api.post('/conciliacao/conciliar-manual-ag', { id_agendamento: manualAgItem.id_agendamento, id_faturamento_lote: fatId, auto_envio: autoEnvio, data_realizacao: dataOverride });
             alert(r.data.message); setShowManualAgModal(false); loadItens();
         } catch (e) { alert(e.response?.data?.detail || "Erro"); }
     };
 
+
     const filteredItens = itens.filter(i => {
         const matchesPaciente = !filtroPaciente || i.paciente?.toLowerCase().includes(filtroPaciente.toLowerCase());
+        const matchesGuia = !filtroGuia || i.numero_guia?.toLowerCase().includes(filtroGuia.toLowerCase());
+        const matchesDataInicio = !filtroDataInicio || (i.data && i.data >= filtroDataInicio);
+        const matchesDataFim = !filtroDataFim || (i.data && i.data <= filtroDataFim);
         const matchesStatus = !filtroStatus || i.status_conciliacao === filtroStatus;
+        
         let matchesVerificacao = true;
         if (filtroVerificacao === 'apto') {
             matchesVerificacao = i.status_verificacao?.texto === 'Apto a faturar';
         } else if (filtroVerificacao === 'fora_prazo') {
             matchesVerificacao = i.status_verificacao?.texto === 'Fora do período da guia';
+        } else if (filtroVerificacao === 'nao_cadastrada') {
+            matchesVerificacao = i.status_verificacao?.texto === 'Guia não cadastrada (validação indisponível)';
+        } else if (filtroVerificacao === 'sem_datas') {
+            matchesVerificacao = i.status_verificacao?.texto === 'Guia sem datas (validação indisponível)';
+        } else if (filtroVerificacao === 'sem_guia') {
+            matchesVerificacao = i.status_verificacao?.texto === 'Sem guia vinculada';
         }
-        return matchesPaciente && matchesStatus && matchesVerificacao;
+        
+        return matchesPaciente && matchesGuia && matchesDataInicio && matchesDataFim && matchesStatus && matchesVerificacao;
     });
+
     const totalConc = itens.filter(i => i.status_conciliacao === 'Conciliado').length;
     const totalPend = itens.filter(i => i.status_conciliacao === 'Não Conciliado').length;
 
@@ -206,6 +244,7 @@ export default function Conciliacao() {
                     <div>
                         <label className="block text-xs text-slate-500 mb-1">Envio Automático</label>
                         <button
+                            type="button"
                             onClick={() => setAutoEnvio(!autoEnvio)}
                             className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${autoEnvio ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
                             title="Envio automático de atualizações via API ao conciliar/reverter"
@@ -216,12 +255,12 @@ export default function Conciliacao() {
                     </div>
                     <div className="flex items-end">
                         {!isLinked ? (
-                            <button onClick={handleConciliar} disabled={!selectedLoteConvenio || !selectedLoteAgendamento || conciliando}
+                            <button type="button" onClick={handleConciliar} disabled={!selectedLoteConvenio || !selectedLoteAgendamento || conciliando}
                                 className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50">
                                 {conciliando ? <><Loader2 size={16} className="animate-spin"/> Conciliando...</> : <><Link2 size={16}/> Conciliar</>}
                             </button>
                         ) : (
-                            <button onClick={handleReverter} disabled={revertendo}
+                            <button type="button" onClick={handleReverter} disabled={revertendo}
                                 className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50">
                                 {revertendo ? <><Loader2 size={16} className="animate-spin"/> Revertendo...</> : <><XCircle size={16}/> Reverter Conciliação</>}
                             </button>
@@ -248,16 +287,42 @@ export default function Conciliacao() {
 
             {/* Filtros */}
             {itens.length > 0 && (
-                <div className="bg-slate-800 p-3 border-b border-slate-700 flex gap-3">
-                    <input type="text" placeholder="Filtrar por paciente..." className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500 flex-1" value={filtroPaciente} onChange={e => setFiltroPaciente(e.target.value)} />
-                    <select className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
-                        <option value="">Status: Todos</option><option value="Conciliado">Conciliado</option><option value="Não Conciliado">Não Conciliado</option>
-                    </select>
-                    <select className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200" value={filtroVerificacao} onChange={e => setFiltroVerificacao(e.target.value)}>
-                        <option value="">Verificação: Todos</option>
-                        <option value="apto">Apto a Faturar</option>
-                        <option value="fora_prazo">Fora do Prazo da Guia</option>
-                    </select>
+                <div className="bg-slate-800 p-4 border-b border-slate-700 grid grid-cols-6 gap-4">
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-400 mb-1 font-semibold uppercase tracking-wider">Paciente</label>
+                        <input type="text" placeholder="Filtrar paciente..." className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" value={filtroPaciente} onChange={e => setFiltroPaciente(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-400 mb-1 font-semibold uppercase tracking-wider">Guia</label>
+                        <input type="text" placeholder="Filtrar guia..." className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" value={filtroGuia} onChange={e => setFiltroGuia(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-400 mb-1 font-semibold uppercase tracking-wider">Data Início</label>
+                        <input type="date" className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" value={filtroDataInicio} onChange={e => setFiltroDataInicio(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-400 mb-1 font-semibold uppercase tracking-wider">Data Fim</label>
+                        <input type="date" className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-400 mb-1 font-semibold uppercase tracking-wider">Status Conciliação</label>
+                        <select className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
+                            <option value="">Todos</option>
+                            <option value="Conciliado">Conciliado</option>
+                            <option value="Não Conciliado">Não Conciliado</option>
+                        </select>
+                    </div>
+                    <div className="flex flex-col">
+                        <label className="text-[10px] text-slate-400 mb-1 font-semibold uppercase tracking-wider">Verificação</label>
+                        <select className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" value={filtroVerificacao} onChange={e => setFiltroVerificacao(e.target.value)}>
+                            <option value="">Todos</option>
+                            <option value="apto">Apto a Faturar</option>
+                            <option value="fora_prazo">Fora do Prazo da Guia</option>
+                            <option value="nao_cadastrada">Guia não cadastrada</option>
+                            <option value="sem_datas">Guia sem datas</option>
+                            <option value="sem_guia">Sem guia vinculada</option>
+                        </select>
+                    </div>
                 </div>
             )}
 
@@ -293,11 +358,11 @@ export default function Conciliacao() {
                                     <td className="px-3 py-2">
                                         <div className="flex gap-1">
                                             {(item.id_faturamento_lote || (item.status_verificacao && item.status_verificacao.fora_do_prazo)) && (
-                                                <button onClick={() => { setEditItem(item); setEditForm({ dataRealizacao: item.data || '', Guia: item.numero_guia || '', cod_procedimento_fat: item.cod_procedimento_fat || '' }); setShowEditModal(true); }}
+                                                <button type="button" onClick={() => { setEditItem(item); setEditForm({ dataRealizacao: item.data || '', Guia: item.numero_guia || '', cod_procedimento_fat: item.cod_procedimento_fat || '' }); setShowEditModal(true); }}
                                                     className={`p-1 transition-colors ${item.id_faturamento_lote ? 'text-slate-400 hover:text-indigo-400' : 'text-amber-400 hover:text-amber-300'}`} title={item.id_faturamento_lote ? "Editar Faturamento" : "Editar Agendamento (Fora do Prazo)"}><Edit3 size={14}/></button>
                                             )}
                                             {item.status_conciliacao !== 'Conciliado' && item.numero_guia && (
-                                                <button onClick={() => handleOpenManualAg(item)}
+                                                <button type="button" onClick={() => handleOpenManualAg(item)}
                                                     className="p-1 text-slate-400 hover:text-violet-400 transition-colors" title="Conciliação Manual"><Link2 size={14}/></button>
                                             )}
                                             {item.status_conciliacao === 'Conciliado' && (
@@ -330,7 +395,7 @@ export default function Conciliacao() {
                     <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl p-6">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-semibold text-slate-100">{editItem.id_faturamento_lote ? "Editar Item de Faturamento" : "Editar Agendamento"}</h3>
-                            <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                            <button type="button" onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
                         </div>
                         <form onSubmit={handleEditarItem} className="space-y-4">
                             <div><label className="block text-sm text-slate-400 mb-1">Data</label><input type="date" value={editForm.dataRealizacao} onChange={e => setEditForm({...editForm, dataRealizacao: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"/></div>
@@ -352,7 +417,7 @@ export default function Conciliacao() {
                     <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
                         <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50 shrink-0">
                             <h3 className="text-lg font-semibold text-slate-100">Conciliação Manual — Candidatos</h3>
-                            <button onClick={() => setShowManualModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                            <button type="button" onClick={() => setShowManualModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
                         </div>
                         <div className="overflow-auto flex-1 p-4">
                             {loadingCandidatos ? <div className="text-center text-slate-500 py-8">Buscando candidatos...</div>
@@ -366,12 +431,23 @@ export default function Conciliacao() {
                                         {candidatos.map(c => (
                                             <tr key={c.id_agendamento} className="hover:bg-slate-800/30">
                                                 <td className="px-3 py-2 text-xs">{c.paciente}</td>
-                                                <td className="px-3 py-2 text-xs">{c.data}</td>
+                                                <td className="px-3 py-2 text-xs">
+                                                    <input type="date"
+                                                        value={candidatoDatas[c.id_agendamento] || ''}
+                                                        onChange={e => setCandidatoDatas(prev => ({...prev, [c.id_agendamento]: e.target.value}))}
+                                                        className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-violet-500 w-[130px]"
+                                                    />
+                                                </td>
                                                 <td className="px-3 py-2 text-xs">{c.numero_guia}</td>
                                                 <td className="px-3 py-2"><StatusBadge sv={c.status_verificacao}/></td>
                                                 <td className="px-3 py-2">
-                                                    <button onClick={() => handleConciliarManual(c.id_agendamento)} disabled={!c.apto}
-                                                        className="px-2 py-1 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded disabled:opacity-40 disabled:cursor-not-allowed">Vincular</button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.preventDefault(); handleConciliarManual(c.id_agendamento); }}
+                                                        className="px-2 py-1 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded"
+                                                    >
+                                                        Vincular
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -392,7 +468,7 @@ export default function Conciliacao() {
                                 <h3 className="text-lg font-semibold text-slate-100">Vincular Manualmente</h3>
                                 <p className="text-xs text-slate-400 mt-1">Paciente: {manualAgItem.paciente} | Guia: {manualAgItem.numero_guia} | Data: {manualAgItem.data}</p>
                             </div>
-                            <button onClick={() => setShowManualAgModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                            <button type="button" onClick={() => setShowManualAgModal(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
                         </div>
                         <div className="overflow-auto flex-1 p-4">
                             {loadingFatCandidatos ? <div className="text-center text-slate-500 py-8">Buscando itens de faturamento...</div>
@@ -409,10 +485,21 @@ export default function Conciliacao() {
                                                 <td className="px-3 py-2 font-mono text-xs">{f.detalheId}</td>
                                                 <td className="px-3 py-2 text-xs">{f.Guia}</td>
                                                 <td className="px-3 py-2 text-xs">{f.CodigoBeneficiario}</td>
-                                                <td className="px-3 py-2 text-xs">{f.dataRealizacao || '-'}</td>
+                                                <td className="px-3 py-2 text-xs">
+                                                    <input type="date"
+                                                        value={fatCandidatoDatas[f.id] || ''}
+                                                        onChange={e => setFatCandidatoDatas(prev => ({...prev, [f.id]: e.target.value}))}
+                                                        className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-violet-500 w-[130px]"
+                                                    />
+                                                </td>
                                                 <td className="px-3 py-2">
-                                                    <button onClick={() => handleConciliarManualAg(f.id)}
-                                                        className="px-2 py-1 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded">Vincular</button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.preventDefault(); handleConciliarManualAg(f.id); }}
+                                                        className="px-2 py-1 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded"
+                                                    >
+                                                        Vincular
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}

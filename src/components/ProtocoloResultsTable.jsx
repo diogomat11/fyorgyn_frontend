@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { CheckCircle, XCircle, Clock, Loader, AlertTriangle, Download, Edit3, Check, X, Eye, Trash2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { CheckCircle, XCircle, Clock, Loader, AlertTriangle, Download, Edit3, Check, X, Eye, Trash2, Database } from 'lucide-react';
 import Badge from './ui/Badge';
 import Button from './ui/Button';
 import ProtocoloAtendimentosPopover from './ProtocoloAtendimentosPopover';
@@ -14,14 +15,16 @@ import ProtocoloPDFModal from './ProtocoloPDFModal';
  *   onDownloadFile(id, filename) — download handler
  *   onUpdateFileName(id, newName) — rename handler
  *   onDeleteFile(id) — delete handler
+ *   onGravarArquivo(id) — save item handler
  */
-export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, onUpdateFileName, onDeleteFile, onUpdateAtendimentos }) {
+export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, onUpdateFileName, onDeleteFile, onUpdateAtendimentos, onGravarArquivo }) {
     const [editingId, setEditingId] = useState(null);
     const [editValue, setEditValue] = useState('');
     const [tooltipId, setTooltipId] = useState(null);
     const [atendimentosModalFile, setAtendimentosModalFile] = useState(null);
     const [viewPdfFile, setViewPdfFile] = useState(null);
     const [popoverTop, setPopoverTop] = useState(0);
+    const [popoverLeft, setPopoverLeft] = useState(0);
 
     const startEdit = useCallback((arquivo) => {
         setEditingId(arquivo.id);
@@ -172,23 +175,59 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
                                 {arquivo.atendimentos && arquivo.atendimentos.length > 0 ? (
                                     <div className="relative">
                                         <button
-                                            className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1 cursor-pointer"
+                                            className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1.5 cursor-pointer group"
                                             onMouseEnter={() => setTooltipId(arquivo.id)}
                                             onMouseLeave={() => setTooltipId(null)}
                                             onClick={(e) => {
-                                                const rect = e.currentTarget.closest('tr').getBoundingClientRect();
-                                                setPopoverTop(rect.top + window.scrollY);
+                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                setPopoverTop(rect.top);
+                                                setPopoverLeft(rect.left);
                                                 setAtendimentosModalFile(arquivo);
                                             }}
+                                            title="Visualizar / Editar atendimentos"
                                         >
-                                            <Eye size={14} />
-                                            {arquivo.atendimentos.length} data(s)
-                                            <Edit3 size={12} className="ml-1 opacity-50 group-hover:opacity-100" />
+                                            <span className="font-semibold text-text-primary mr-1">{arquivo.atendimentos.length} data(s)</span>
+                                            {(() => {
+                                                const total = arquivo.atendimentos.length;
+                                                const pendentes = arquivo.atendimentos.filter(a => a.assinatura === 'Não').length;
+                                                if (pendentes === total) {
+                                                    return (
+                                                        <XCircle 
+                                                            size={15} 
+                                                            className="text-red-500 cursor-help" 
+                                                            title="todos itens sem assinatura" 
+                                                        />
+                                                    );
+                                                } else if (pendentes > 0) {
+                                                    return (
+                                                        <AlertTriangle 
+                                                            size={15} 
+                                                            className="text-amber-500 cursor-help" 
+                                                            title="Possui itens sem assinatura" 
+                                                        />
+                                                    );
+                                                } else {
+                                                    return (
+                                                        <CheckCircle 
+                                                            size={15} 
+                                                            className="text-emerald-500 cursor-help" 
+                                                            title="Todos itens assinados" 
+                                                        />
+                                                    );
+                                                }
+                                            })()}
+                                            <Edit3 size={11} className="opacity-40 group-hover:opacity-80 transition-opacity ml-1 text-slate-400" />
                                         </button>
                                         
                                         {/* View Tooltip (Hover) */}
                                         {tooltipId === arquivo.id && !atendimentosModalFile && (
                                             <div className="absolute z-50 bottom-full left-0 mb-2 bg-slate-800 border border-border rounded-lg p-3 shadow-xl min-w-[220px] animate-in fade-in slide-in-from-bottom-1 duration-200">
+                                                {arquivo.atendimentos && arquivo.atendimentos.some(a => a.assinatura === 'Não') && (
+                                                    <div className="flex items-center gap-1 text-[11px] font-semibold text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded mb-2">
+                                                        <AlertTriangle size={12} />
+                                                        Pendente Assinatura
+                                                    </div>
+                                                )}
                                                 <div className="text-xs text-text-secondary font-semibold mb-2 uppercase">
                                                     Datas de Atendimento
                                                 </div>
@@ -223,11 +262,11 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
                                     <button
                                         onClick={(e) => {
                                             const rect = e.currentTarget.closest('tr').getBoundingClientRect();
-                                            setPopoverTop(rect.top + window.scrollY);
+                                            setPopoverTop(rect.top);
                                             setViewPdfFile(arquivo);
                                         }}
                                         className="text-slate-400 hover:text-blue-400 p-1 rounded hover:bg-blue-500/10 transition-colors"
-                                        title="Visualizar arquivo"
+                                        title="Visualizar arquivo PDF"
                                     >
                                         <Eye size={14} />
                                     </button>
@@ -242,7 +281,7 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
                                         </button>
                                     )}
                                     {/* Delete */}
-                                    {(arquivo.status === 'erro' || arquivo.status === 'falha' || arquivo.status === 'pendente') && onDeleteFile && (
+                                    {onDeleteFile && (
                                         <button
                                             onClick={() => {
                                                 if (window.confirm("Deseja realmente excluir este arquivo da sessão?")) {
@@ -250,7 +289,7 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
                                                 }
                                             }}
                                             className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors ml-1"
-                                            title="Excluir arquivo"
+                                            title="Excluir arquivo do lote"
                                         >
                                             <Trash2 size={14} />
                                         </button>
@@ -263,13 +302,17 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
             </table>
 
             {/* Global Popovers (Aligned with Row vertically, Centered horizontally) */}
-            {atendimentosModalFile && (
+            {/* Global Popovers using React Portal to escape CSS transforms and scroll containers */}
+            {atendimentosModalFile && createPortal(
                 <div 
-                    className="fixed inset-0 z-[100] flex justify-center pointer-events-none bg-slate-950/20 backdrop-blur-[1px]"
+                    className="fixed inset-0 z-[100] pointer-events-none"
                 >
                     <div 
                         className="pointer-events-auto absolute"
-                        style={{ top: Math.max(80, popoverTop - 200) + 'px' }}
+                        style={{ 
+                            top: Math.max(10, popoverTop - 120) + 'px', 
+                            left: Math.max(10, popoverLeft - 370) + 'px'
+                        }}
                     >
                         <ProtocoloAtendimentosPopover
                             isOpen={true}
@@ -278,16 +321,18 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
                             onSave={onUpdateAtendimentos}
                         />
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
-            {viewPdfFile && (
+            {viewPdfFile && createPortal(
                 <div 
-                    className="fixed inset-0 z-[110] flex justify-center pointer-events-none bg-slate-950/40 backdrop-blur-[2px]"
+                    className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-[2px] pointer-events-auto"
+                    onClick={() => setViewPdfFile(null)}
                 >
                     <div 
-                        className="pointer-events-auto absolute w-full max-w-4xl px-4"
-                        style={{ top: Math.max(40, popoverTop - 350) + 'px' }}
+                        className="w-full max-w-4xl"
+                        onClick={(e) => e.stopPropagation()}
                     >
                         <ProtocoloPDFModal
                             isOpen={true}
@@ -295,7 +340,8 @@ export default function ProtocoloResultsTable({ arquivos = [], onDownloadFile, o
                             file={viewPdfFile}
                         />
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

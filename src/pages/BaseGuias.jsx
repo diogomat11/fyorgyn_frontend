@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Download, Filter, X, Calendar, Clock, Plus, Printer } from 'lucide-react';
+import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle } from 'lucide-react';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import SearchableSelect from '../components/SearchableSelect';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -91,6 +91,27 @@ export default function BaseGuias() {
     const location = useLocation();
     const navigate = useNavigate();
 
+    const [stats, setStats] = useState(null);
+
+    const fetchStats = async () => {
+        try {
+            const params = {};
+            if (filters.id_convenio) {
+                params.id_convenio = parseInt(filters.id_convenio);
+            }
+            const res = await api.get('/dashboard/stats', { params });
+            setStats(res.data);
+        } catch (error) {
+            console.error("Error fetching dashboard stats in BaseGuias", error);
+        }
+    };
+
+    const navigateToTab = (tabName, statusVal = '') => {
+        setFilters(f => ({ ...f, status: statusVal }));
+        setPage(1);
+        navigate(`/guias?aba=${tabName}`);
+    };
+
     // Derived state from URL instead of strictly internal hook
     const searchParams = new URLSearchParams(location.search);
     const abaParam = searchParams.get('aba') || 'autorizadas';
@@ -131,9 +152,6 @@ export default function BaseGuias() {
 
         api.get('/convenios/').then(res => {
             setConvenios(res.data);
-            if (res.data.length > 0) {
-                setFilters(f => ({ ...f, id_convenio: res.data[0].id_convenio.toString() }));
-            }
         }).catch(console.error);
     }, []);
 
@@ -171,6 +189,7 @@ export default function BaseGuias() {
                 setGuias(res.data);
                 setTotalItems(res.data.length);
             }
+            fetchStats();
         } catch (error) {
             console.error("Error fetching guias", error);
         } finally {
@@ -304,6 +323,86 @@ export default function BaseGuias() {
                 </div>
             </div>
 
+            {/* Stats Summary Cards */}
+            {stats && (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'solicitacoes' && !filters.status ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('solicitacoes', '')}
+                    >
+                        <div className="bg-indigo-500/10 p-2 rounded-full text-indigo-400">
+                            <Activity size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Total Geral</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.total ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'autorizadas' && !filters.status ? 'border-emerald-500 bg-emerald-500/5 ring-1 ring-emerald-500/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('autorizadas', '')}
+                    >
+                        <div className="bg-emerald-500/10 p-2 rounded-full text-emerald-400">
+                            <CheckCircle size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Autorizadas</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.autorizadas ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'solicitacoes' && filters.status === 'Pendente' ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('solicitacoes', 'Pendente')}
+                    >
+                        <div className="bg-amber-500/10 p-2 rounded-full text-amber-400">
+                            <Clock size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Pendentes</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.pendentes ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'solicitacoes' && filters.status === 'Negado' ? 'border-rose-500 bg-rose-500/5 ring-1 ring-rose-500/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('solicitacoes', 'Negado')}
+                    >
+                        <div className="bg-rose-500/10 p-2 rounded-full text-rose-400">
+                            <XCircle size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Negadas</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.negadas ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'solicitacoes' && filters.status === 'Cancelado' ? 'border-slate-500 bg-slate-500/5 ring-1 ring-slate-500/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('solicitacoes', 'Cancelado')}
+                    >
+                        <div className="bg-slate-500/10 p-2 rounded-full text-slate-400">
+                            <X size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Canceladas</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.canceladas ?? 0}</div>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
             <Card noPadding>
                 <div className="p-4 border-b border-border flex flex-col md:flex-row gap-4 items-end bg-surface/30 flex-wrap">
                     <div className="flex-1 w-full md:w-auto min-w-[200px]">
@@ -368,10 +467,19 @@ export default function BaseGuias() {
                             }}
                         >
                             <option value="">Todos</option>
-                            <option value="AUTORIZADA">AUTORIZADA</option>
-                            <option value="NEGADA">NEGADA</option>
-                            <option value="CANCELADA">CANCELADA</option>
-                            <option value="EM ESTUDO">EM ESTUDO</option>
+                            {activeTab === 'autorizadas' ? (
+                                <>
+                                    <option value="Autorizado">Autorizado</option>
+                                    <option value="Parcialmente autorizada">Parcialmente Autorizada</option>
+                                </>
+                            ) : (
+                                <>
+                                    <option value="Pendente">Pendente</option>
+                                    <option value="Negado">Negado</option>
+                                    <option value="Cancelado">Cancelado</option>
+                                    <option value="Aguardando">Aguardando Documentação</option>
+                                </>
+                            )}
                         </Select>
                     </div>
 
@@ -430,10 +538,12 @@ export default function BaseGuias() {
                             <tbody className="divide-y divide-border">
                                 {sortedGuias.map(g => {
                                     const paciente = carteirinhas.find(c => c.id === g.carteirinha_id);
+                                    const statusUpper = g.status_guia?.toUpperCase() || '';
+                                    const isSuccessStatus = statusUpper.includes('AUTORIZAD') || statusUpper.includes('LIBERAD');
                                     return (
                                         <tr key={g.id} className="hover:bg-slate-800/30 transition-colors">
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
-                                                {activeTab === 'autorizadas' && g.status_guia?.toUpperCase().includes('AUTORIZAD') && (
+                                                {activeTab === 'autorizadas' && isSuccessStatus && (
                                                     <button
                                                         onClick={() => handlePrint(g)}
                                                         className="p-1 hover:text-primary transition-colors"
@@ -450,7 +560,7 @@ export default function BaseGuias() {
                                                 <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDate(g.data_solicitacao)}</td>
                                             ) : (
                                                 <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
-                                                    {['NEGADO', 'CANCELADO'].includes(g.status_guia?.toUpperCase()) || g.status_guia?.toUpperCase().includes('ESTUDO') ? '-' : formatDate(g.data_autorizacao)}
+                                                    {['NEGADO', 'CANCELADO'].includes(statusUpper) || statusUpper.includes('ESTUDO') ? '-' : formatDate(g.data_autorizacao)}
                                                 </td>
                                             )}
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{g.senha}</td>
@@ -458,7 +568,7 @@ export default function BaseGuias() {
                                                 <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDate(g.validade)}</td>
                                             )}
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
-                                                <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${g.status_guia?.toUpperCase().includes('AUTORIZAD') ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-300'}`}>
+                                                <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${isSuccessStatus ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-300'}`}>
                                                     {g.status_guia}
                                                 </span>
                                             </td>

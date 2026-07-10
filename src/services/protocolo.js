@@ -85,6 +85,33 @@ const protocoloApi = {
      * Get monthly statistics.
      */
     getStats: () => api.get('/protocolo/stats'),
+
+    /**
+     * Gravar os atendimentos de um arquivo específico em protocolo_itens.
+     */
+    gravarArquivo: (arquivoId) => api.post(`/protocolo/arquivos/${arquivoId}/gravar`),
+
+    /**
+     * Gravar os atendimentos de todos os arquivos com sucesso de um lote em protocolo_itens.
+     */
+    gravarLote: (loteId, ignoreUnsigned = false) => 
+        api.post(`/protocolo/lotes/${loteId}/gravar-todos`, null, { params: { ignore_unsigned: ignoreUnsigned } }),
+
+    /**
+     * Listar e filtrar itens de protocolo persistidos.
+     */
+    listItens: (params = {}) => api.get('/protocolo/itens', { params }),
+
+    /**
+     * Obter todos os itens para exportação.
+     */
+    exportItens: (params = {}) => api.get('/protocolo/itens/exportar', { params }),
+
+    /**
+     * Acionar conciliação dos itens de protocolo.
+     */
+    conciliarItens: (idConvenio, faturamentoLoteId = null) => 
+        api.post('/protocolo/itens/conciliar', null, { params: { id_convenio: idConvenio, faturamento_lote_id: faturamentoLoteId } }),
 };
 
 export default protocoloApi;

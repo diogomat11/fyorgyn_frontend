@@ -63,6 +63,15 @@ export default function Importacoes() {
   const [op14NumeroLote, setOp14NumeroLote] = useState('');
   const [op14CodPrestador, setOp14CodPrestador] = useState('');
 
+  // OP6 Evoluir parameters (Baixar Faturados)
+  const [op6EvPlanoSaudeId, setOp6EvPlanoSaudeId] = useState('18afb174-a2c2-49ee-93d2-d6e4868817bc');
+  const [op6EvDataInicial, setOp6EvDataInicial] = useState('');
+  const [op6EvDataFinal, setOp6EvDataFinal] = useState('');
+
+  // OP4 Evoluir parameters (Atualizar Data do PTS)
+  const [op4EvIdRelatorio, setOp4EvIdRelatorio] = useState('');
+  const [op4EvNovaData, setOp4EvNovaData] = useState('');
+
   // Excel Batch Upload State (Bradesco Fature)
   const [excelFile, setExcelFile] = useState(null);
   const [excelDataInicio, setExcelDataInicio] = useState('');
@@ -152,6 +161,11 @@ export default function Importacoes() {
     return numA - numB;
   });
 
+  const isStandalone = React.useMemo(() => {
+    return (selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote'].includes(importRotina)) ||
+           (selectedConvenio === '100' && ['1', 'op1', 'op1_importPacientes', 'op5_ImportCorpoClinico', 'op6_baixarFaturados', 'op4_atualizarDataPTS'].includes(importRotina));
+  }, [selectedConvenio, importRotina]);
+
   useEffect(() => {
     // Reset or auto-select routine when convenio changes
     // Default to '1' (Consulta) if available, fallback to first
@@ -231,9 +245,7 @@ export default function Importacoes() {
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
-    const isIpasgoSpecial = selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote'].includes(importRotina);
-
-    if (!isIpasgoSpecial && (importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
+    if (!isStandalone && (importType === 'single' || importType === 'multiple') && selectedCarteirinhas.length === 0) {
       alert("Selecione pelo menos uma carteirinha/paciente.");
       return;
     }
@@ -355,10 +367,32 @@ export default function Importacoes() {
           data_fim: dtFimFormatted,
           cod_prestador: op13CodPrestador || (currentConvenioObj?.codigo_referenciado || '').trim()
         });
-      } else if (selectedConvenio === '6' && ['14', 'op14_cancelar_lote'].includes(finalRotina)) {
+      } else if (selectedConvenio === '100' && ['op6_baixarFaturados'].includes(finalRotina)) {
+        if (!op6EvDataInicial || !op6EvDataFinal) {
+          alert("Por favor, preencha as datas Inicial e Final.");
+          return;
+        }
         finalParams = JSON.stringify({
-          numero_lote: op14NumeroLote,
-          cod_prestador: op14CodPrestador || (currentConvenioObj?.codigo_referenciado || '').trim()
+          plano_saude_id: op6EvPlanoSaudeId,
+          data_inicial: op6EvDataInicial,
+          data_final: op6EvDataFinal,
+          paciente_id: 0,
+          form_subiu_a_guia: 'sim'
+        });
+      } else if (selectedConvenio === '100' && ['op4_atualizarDataPTS'].includes(finalRotina)) {
+        if (!op4EvIdRelatorio || !op4EvNovaData) {
+          alert("Por favor, preencha o ID do Relatório e a Nova Data.");
+          return;
+        }
+        // Converter data de AAAA-MM-DD para DD/MM/AAAA conforme o robô espera
+        let novaDataFormatted = op4EvNovaData;
+        const parts = op4EvNovaData.split('-');
+        if (parts.length === 3) {
+          novaDataFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        finalParams = JSON.stringify({
+          id_relatorio: op4EvIdRelatorio,
+          data: novaDataFormatted
         });
       }
 
@@ -392,7 +426,7 @@ export default function Importacoes() {
           rotina: finalRotina,
           params: finalParams,
           id_convenio: selectedConvenio ? parseInt(selectedConvenio) : undefined,
-          carteirinha_ids: (importType === 'all' || isIpasgoSpecial) ? [] : selectedCarteirinhas
+          carteirinha_ids: (importType === 'all' || isStandalone) ? [] : selectedCarteirinhas
         };
       }
 
@@ -548,8 +582,15 @@ export default function Importacoes() {
           <Card className="flex items-center gap-3 p-4">
             <div className="bg-emerald-500/10 p-2 rounded-full text-emerald-500"><CheckCircle size={20} /></div>
             <div>
-              <div className="text-xs text-text-secondary">Guias</div>
-              <div className="text-xl font-bold text-text-primary">{stats.overview.total_guias}</div>
+              <div className="text-xs text-text-secondary">Guias Autorizadas</div>
+              <div className="text-xl font-bold text-text-primary">
+                {stats.overview.guias_status?.autorizadas ?? stats.overview.total_guias}
+              </div>
+              {stats.overview.guias_status && (
+                <div className="text-[10px] text-text-secondary mt-0.5 leading-tight">
+                  Total: {stats.overview.guias_status.total} | Pend: {stats.overview.guias_status.pendentes}
+                </div>
+              )}
             </div>
           </Card>
           <Card className="flex items-center gap-3 p-4">
@@ -584,7 +625,11 @@ export default function Importacoes() {
 
           <div className="md:col-span-3">
             <label className="block text-sm font-medium text-text-secondary mb-1">Tipo de Importação</label>
-            {importRotina === '1_fature' ? (
+            {isStandalone ? (
+              <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-sm text-indigo-400 font-medium h-[42px] flex items-center justify-center">
+                ⚙️ Portal Completo (Sem Filtros)
+              </div>
+            ) : importRotina === '1_fature' ? (
               <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-sm text-indigo-400 font-medium h-[42px] flex items-center justify-center">
                 📊 Lote Excel (Automático)
               </div>
@@ -866,6 +911,58 @@ export default function Importacoes() {
             </>
           )}
 
+          {selectedConvenio === '100' && ['op6_baixarFaturados'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Plano de Saúde ID (UUID) *</label>
+                <Input
+                  type="text"
+                  placeholder="UUID do Plano de Saúde"
+                  value={op6EvPlanoSaudeId}
+                  onChange={e => setOp6EvPlanoSaudeId(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Inicial *</label>
+                <Input
+                  type="date"
+                  value={op6EvDataInicial}
+                  onChange={e => setOp6EvDataInicial(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Final *</label>
+                <Input
+                  type="date"
+                  value={op6EvDataFinal}
+                  onChange={e => setOp6EvDataFinal(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '100' && ['op4_atualizarDataPTS'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-6">
+                <label className="block text-sm font-medium text-text-secondary mb-1">ID do Relatório PTS *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 5678"
+                  value={op4EvIdRelatorio}
+                  onChange={e => setOp4EvIdRelatorio(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-6">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Nova Data *</label>
+                <Input
+                  type="date"
+                  value={op4EvNovaData}
+                  onChange={e => setOp4EvNovaData(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
           {(importType === 'excel_batch' || importRotina === '1_fature') ? (
             <>
               <div className="md:col-span-12">
@@ -954,7 +1051,7 @@ export default function Importacoes() {
               </div>
             </>
           ) : (
-            importType !== 'all' && (
+            (importType !== 'all' && !isStandalone) && (
               <div className="md:col-span-7">
                 <label className="block text-sm font-medium text-text-secondary mb-1">Selecione os Pacientes</label>
 

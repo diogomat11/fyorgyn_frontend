@@ -17,6 +17,7 @@ import GestaoTerapias from './pages/GestaoTerapias';
 import MainLayout from './layouts/MainLayout';
 import Credenciais from './pages/Credenciais';
 import Usuarios from './pages/Usuarios';
+import CorpoClinico from './pages/CorpoClinico';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -105,6 +106,12 @@ export default function App() {
         <Route path="/terapias" element={
           <PrivateRoute>
             <GestaoTerapias />
+          </PrivateRoute>
+        } />
+
+        <Route path="/corpo-clinico" element={
+          <PrivateRoute>
+            <CorpoClinico />
           </PrivateRoute>
         } />
 

@@ -12,6 +12,7 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
         paciente: '',
         id_paciente: '',
         codigo_beneficiario: '',
+        cid: '',
         status: 'ativo'
     });
     const [loading, setLoading] = useState(false);
@@ -45,6 +46,7 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
                 paciente: carteirinha.paciente,
                 id_paciente: carteirinha.id_paciente || '',
                 codigo_beneficiario: carteirinha.codigo_beneficiario || '',
+                cid: carteirinha.cid || '',
                 status: carteirinha.status || 'ativo'
             });
         }
@@ -65,6 +67,7 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
                 paciente: formData.paciente,
                 id_paciente: formData.id_paciente || null,
                 codigo_beneficiario: formData.codigo_beneficiario ? formData.codigo_beneficiario : null,
+                cid: formData.cid || null,
                 status: formData.status
             };
             await api.put(`/carteirinhas/${carteirinha.id}`, payload);
@@ -131,6 +134,21 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
                                 />
                             </div>
                         )}
+                    </div>
+
+                    {/* CID do Paciente */}
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">
+                            CID do Paciente
+                            <span className="ml-1 text-xs text-text-secondary/60">(usado na autorização IPASGO)</span>
+                        </label>
+                        <Input
+                            type="text"
+                            value={formData.cid}
+                            onChange={e => setFormData({ ...formData, cid: e.target.value.toUpperCase() })}
+                            placeholder="Ex: F84.0"
+                            maxLength={10}
+                        />
                     </div>
 
                     <div>

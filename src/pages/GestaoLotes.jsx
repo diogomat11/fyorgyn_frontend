@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
-import { Layers, Plus, X, Search, RefreshCw, XCircle, CheckCircle, HelpCircle, Download, ToggleLeft, ToggleRight, Calendar } from 'lucide-react';
+import { Layers, Plus, X, Search, RefreshCw, XCircle, CheckCircle, HelpCircle, Download, ToggleLeft, ToggleRight, Calendar, Send } from 'lucide-react';
 
 export default function GestaoLotes() {
     const [lotes, setLotes] = useState([]);
@@ -24,6 +24,14 @@ export default function GestaoLotes() {
     const [filtroBeneficiario, setFiltroBeneficiario] = useState('');
     const [filtroStatusConf, setFiltroStatusConf] = useState('');
     const [conferindoTodos, setConferindoTodos] = useState(false);
+
+    // Ordenação de itens do lote
+    const [sortField, setSortField] = useState(null);
+    const [sortDirection, setSortDirection] = useState('asc');
+
+    // Edição inline da data
+    const [editingDateItemId, setEditingDateItemId] = useState(null);
+    const [editingDateValue, setEditingDateValue] = useState('');
 
     const pollRef = useRef(null);
 
@@ -146,6 +154,43 @@ export default function GestaoLotes() {
         return matchGuia && matchDetalhe && matchBenef && matchStatusConf;
     });
 
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    const sortedItens = [...filteredItens].sort((a, b) => {
+        if (!sortField) return 0;
+        let valA, valB;
+        if (sortField === 'nome') {
+            valA = a.nome_beneficiario || '';
+            valB = b.nome_beneficiario || '';
+        } else if (sortField === 'data') {
+            valA = a.dataRealizacao || '';
+            valB = b.dataRealizacao || '';
+        } else if (sortField === 'status_conf') {
+            valA = a.StatusConferencia || 0;
+            valB = b.StatusConferencia || 0;
+        } else if (sortField === 'conciliacao') {
+            valA = a.StatusConciliacao || '';
+            valB = b.StatusConciliacao || '';
+        }
+
+        if (typeof valA === 'string') {
+            return sortDirection === 'asc' 
+                ? valA.localeCompare(valB) 
+                : valB.localeCompare(valA);
+        } else {
+            return sortDirection === 'asc'
+                ? (valA > valB ? 1 : valA < valB ? -1 : 0)
+                : (valB > valA ? 1 : valB < valA ? -1 : 0);
+        }
+    });
+
     const totalItens = filteredItens.length;
     const totalStatus67 = filteredItens.filter(i => i.StatusConferencia == 67).length;
     const totalValorConferidos = filteredItens.filter(i => i.StatusConferencia == 67).reduce((acc, i) => acc + (i.ValorProcedimento || 0), 0);
@@ -192,21 +237,44 @@ export default function GestaoLotes() {
         }
     };
 
-    const handleEditData = async (item) => {
-        const currentData = item.dataRealizacao; // Assuming format AAAA-MM-DD from backend
-        const newDate = window.prompt("Nova data de realização (AAAA-MM-DD):", currentData);
-        if (newDate && newDate !== currentData) {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
-                alert("Formato inválido. Use AAAA-MM-DD.");
-                return;
-            }
-            try {
-                await api.put(`/lotes/itens/${item.id}`, { data_realizacao: newDate });
-                setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, dataRealizacao: newDate } : i));
-                alert("Data atualizada com sucesso!");
-            } catch (e) {
-                alert(e.response?.data?.detail || "Erro ao atualizar data");
-            }
+    const formatDateDisplay = (dateStr) => {
+        if (!dateStr) return '-';
+        const cleanDate = dateStr.split('T')[0];
+        const parts = cleanDate.split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        return dateStr;
+    };
+
+    const handleSaveInlineDate = async (item, newDateVal) => {
+        setEditingDateItemId(null);
+        if (newDateVal === item.dataRealizacao) return;
+
+        if (newDateVal && !/^\d{4}-\d{2}-\d{2}$/.test(newDateVal)) {
+            alert("Formato inválido. Use AAAA-MM-DD.");
+            return;
+        }
+
+        try {
+            await api.put(`/lotes/itens/${item.id}`, { 
+                data_realizacao: newDateVal || null,
+                auto_envio: autoEnvio
+            });
+            setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, dataRealizacao: newDateVal } : i));
+        } catch (e) {
+            alert(e.response?.data?.detail || "Erro ao atualizar data");
+        }
+    };
+
+    const handleSendOP7 = async (item) => {
+        try {
+            await api.put(`/lotes/itens/${item.id}`, {
+                auto_envio: true
+            });
+            alert(`Job OP7 enviado com sucesso para o item ${item.detalheId}!`);
+        } catch (e) {
+            alert(e.response?.data?.detail || "Erro ao enviar Job OP7");
         }
     };
 
@@ -547,38 +615,95 @@ export default function GestaoLotes() {
                                                     <th className="px-4 py-3">Detalhe ID</th>
                                                     <th className="px-4 py-3">Guia</th>
                                                     <th className="px-4 py-3">Beneficiário</th>
-                                                    <th className="px-4 py-3">Nome</th>
-                                                    <th className="px-4 py-3">Data Realização</th>
+                                                    <th 
+                                                        className="px-4 py-3 cursor-pointer hover:bg-slate-700/50 select-none transition-colors"
+                                                        onClick={() => handleSort('nome')}
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Nome</span>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {sortField === 'nome' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                                            </span>
+                                                        </div>
+                                                    </th>
+                                                    <th 
+                                                        className="px-4 py-3 cursor-pointer hover:bg-slate-700/50 select-none transition-colors"
+                                                        onClick={() => handleSort('data')}
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Data Realização</span>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {sortField === 'data' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                                            </span>
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3">Valor</th>
-                                                    <th className="px-4 py-3">Status Conf.</th>
-                                                    <th className="px-4 py-3">Conciliação</th>
+                                                    <th 
+                                                        className="px-4 py-3 cursor-pointer hover:bg-slate-700/50 select-none transition-colors"
+                                                        onClick={() => handleSort('status_conf')}
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Status Conf.</span>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {sortField === 'status_conf' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                                            </span>
+                                                        </div>
+                                                    </th>
+                                                    <th 
+                                                        className="px-4 py-3 cursor-pointer hover:bg-slate-700/50 select-none transition-colors"
+                                                        onClick={() => handleSort('conciliacao')}
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Conciliação</span>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {sortField === 'conciliacao' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                                            </span>
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 text-right">Ações</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-700/50">
-                                                {filteredItens.length === 0 ? (
+                                                {sortedItens.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
+                                                        <td colSpan="9" className="px-4 py-8 text-center text-slate-500">
                                                             Nenhum item encontrado.
                                                         </td>
                                                     </tr>
                                                 ) : (
-                                                    filteredItens.map((item, idx) => (
+                                                    sortedItens.map((item, idx) => (
                                                         <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
                                                             <td className="px-4 py-2 font-mono text-xs">{item.detalheId}</td>
                                                             <td className="px-4 py-2">{item.Guia}</td>
                                                             <td className="px-4 py-2">{item.CodigoBeneficiario}</td>
                                                             <td className="px-4 py-2 text-xs">{item.nome_beneficiario || '-'}</td>
                                                             <td className="px-4 py-2">
-                                                                <div className="flex items-center gap-2 group">
-                                                                    <span>{item.dataRealizacao}</span>
-                                                                    <button 
-                                                                        onClick={() => handleEditData(item)}
-                                                                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-primary transition-opacity p-1"
-                                                                        title="Editar Data"
+                                                                {editingDateItemId === item.id ? (
+                                                                    <input 
+                                                                        type="date"
+                                                                        value={editingDateValue}
+                                                                        onChange={e => setEditingDateValue(e.target.value)}
+                                                                        onBlur={() => handleSaveInlineDate(item, editingDateValue)}
+                                                                        onKeyDown={e => {
+                                                                            if (e.key === 'Enter') handleSaveInlineDate(item, editingDateValue);
+                                                                            if (e.key === 'Escape') setEditingDateItemId(null);
+                                                                        }}
+                                                                        className="bg-slate-850 border border-slate-650 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-[130px]"
+                                                                        autoFocus
+                                                                    />
+                                                                ) : (
+                                                                    <div 
+                                                                        onClick={() => {
+                                                                            setEditingDateItemId(item.id);
+                                                                            setEditingDateValue(item.dataRealizacao || '');
+                                                                        }}
+                                                                        className="cursor-pointer hover:bg-slate-800/80 p-1 rounded flex items-center justify-between gap-2 group min-h-[28px]"
+                                                                        title="Clique para editar data"
                                                                     >
-                                                                        <Calendar size={14} />
-                                                                    </button>
-                                                                </div>
+                                                                        <span>{formatDateDisplay(item.dataRealizacao)}</span>
+                                                                        <Calendar size={12} className="opacity-0 group-hover:opacity-100 text-slate-400" />
+                                                                    </div>
+                                                                )}
                                                             </td>
                                                             <td className="px-4 py-2 font-mono text-xs text-slate-100">R$ {item.ValorProcedimento?.toFixed(2)}</td>
                                                             <td className="px-4 py-2">
@@ -606,6 +731,15 @@ export default function GestaoLotes() {
                                                                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.StatusConciliacao?.toLowerCase() === 'conciliado' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-700 text-slate-300'}`}>
                                                                     {item.StatusConciliacao}
                                                                 </span>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-right">
+                                                                <button 
+                                                                    onClick={() => handleSendOP7(item)}
+                                                                    className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors"
+                                                                    title="Enviar Job OP7 (Portal)"
+                                                                >
+                                                                    <Send size={14} />
+                                                                </button>
                                                             </td>
                                                         </tr>
                                                     ))

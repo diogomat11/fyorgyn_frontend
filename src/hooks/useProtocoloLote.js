@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import protocoloApi from '../services/protocolo';
 import usePolling from './usePolling';
 
@@ -14,6 +14,12 @@ export default function useProtocoloLote() {
     const [stats, setStats] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState(null);
+
+    // Ref to track the current activeLoteId across asynchronous callbacks to avoid race conditions
+    const activeLoteIdRef = useRef(activeLoteId);
+    useEffect(() => {
+        activeLoteIdRef.current = activeLoteId;
+    }, [activeLoteId]);
 
     // Determine if we should poll (only when lote is pending/processing)
     const shouldPoll = activeLoteId &&
@@ -35,12 +41,16 @@ export default function useProtocoloLote() {
         try {
             const res = await protocoloApi.getLoteStatus(activeLoteId);
             const data = res.data;
-            setLoteStatus(data);
-            setError(null);
+            
+            // Avoid race conditions: only update state if the returned data matches the currently active lote ID!
+            if (data && data.lote_id === activeLoteIdRef.current) {
+                setLoteStatus(data);
+                setError(null);
 
-            // Refresh stats when processing completes
-            if (['completed', 'error', 'cancelled'].includes(data.status)) {
-                fetchStats();
+                // Refresh stats when processing completes
+                if (['completed', 'error', 'cancelled'].includes(data.status)) {
+                    fetchStats();
+                }
             }
         } catch (e) {
             console.error('Polling error:', e);
@@ -58,13 +68,16 @@ export default function useProtocoloLote() {
             setLotes(lotesData);
 
             // Auto-load the latest session (highest ID) if none active
-            if (lotesData.length > 0 && !activeLoteId) {
+            if (lotesData.length > 0 && !activeLoteIdRef.current) {
                 const latest = lotesData[0];
                 setActiveLoteId(latest.id);
+                setLoteStatus(null);
                 
                 // Fetch status for this latest lote
                 const statusRes = await protocoloApi.getLoteStatus(latest.id);
-                setLoteStatus(statusRes.data);
+                if (statusRes.data.lote_id === latest.id) {
+                    setLoteStatus(statusRes.data);
+                }
             }
 
         } catch (e) {
@@ -76,6 +89,7 @@ export default function useProtocoloLote() {
     const uploadFiles = useCallback(async (files, convenio = 'unimed_goiania') => {
         setUploading(true);
         setError(null);
+        setLoteStatus(null); // Clear previous status immediately to prevent layout overlap
         try {
             const res = await protocoloApi.createLote(files, convenio);
             const newLoteId = res.data.lote_id;
@@ -83,7 +97,9 @@ export default function useProtocoloLote() {
 
             // Immediately fetch status
             const statusRes = await protocoloApi.getLoteStatus(newLoteId);
-            setLoteStatus(statusRes.data);
+            if (statusRes.data.lote_id === newLoteId) {
+                setLoteStatus(statusRes.data);
+            }
 
             // Refresh lotes list
             fetchLotes();
@@ -100,10 +116,13 @@ export default function useProtocoloLote() {
 
     // Select an existing lote to view/poll
     const selectLote = useCallback(async (loteId) => {
+        setLoteStatus(null); // Clear previous status immediately to prevent layout overlap
         setActiveLoteId(loteId);
         try {
             const res = await protocoloApi.getLoteStatus(loteId);
-            setLoteStatus(res.data);
+            if (res.data.lote_id === loteId) {
+                setLoteStatus(res.data);
+            }
         } catch (e) {
             console.error('Error fetching lote:', e);
         }
@@ -111,32 +130,36 @@ export default function useProtocoloLote() {
 
     // Reprocess errors
     const reprocessErrors = useCallback(async () => {
-        if (!activeLoteId) return;
+        if (!activeLoteIdRef.current) return;
         try {
-            await protocoloApi.reprocessErrors(activeLoteId);
+            await protocoloApi.reprocessErrors(activeLoteIdRef.current);
             // Immediately refresh
-            const res = await protocoloApi.getLoteStatus(activeLoteId);
-            setLoteStatus(res.data);
+            const res = await protocoloApi.getLoteStatus(activeLoteIdRef.current);
+            if (res.data.lote_id === activeLoteIdRef.current) {
+                setLoteStatus(res.data);
+            }
         } catch (e) {
             const msg = e.response?.data?.detail || e.message;
             setError(msg);
         }
-    }, [activeLoteId]);
+    }, []);
 
     // Cancel active lote
     const cancelLote = useCallback(async () => {
-        if (!activeLoteId) return;
+        if (!activeLoteIdRef.current) return;
         try {
-            await protocoloApi.cancelLote(activeLoteId);
+            await protocoloApi.cancelLote(activeLoteIdRef.current);
             // Immediately refresh
-            const res = await protocoloApi.getLoteStatus(activeLoteId);
-            setLoteStatus(res.data);
+            const res = await protocoloApi.getLoteStatus(activeLoteIdRef.current);
+            if (res.data.lote_id === activeLoteIdRef.current) {
+                setLoteStatus(res.data);
+            }
             fetchLotes();
         } catch (e) {
             const msg = e.response?.data?.detail || e.message;
             setError(msg);
         }
-    }, [activeLoteId, fetchLotes]);
+    }, [fetchLotes]);
 
     // Download individual file
     const downloadFile = useCallback(async (arquivoId, filename) => {
@@ -156,10 +179,11 @@ export default function useProtocoloLote() {
     }, []);
 
     // Download ZIP
-    const downloadZip = useCallback(async (part = 1) => {
-        if (!activeLoteId) return;
+    const downloadZip = useCallback(async (loteId, part = 1) => {
+        const targetLoteId = loteId || activeLoteId;
+        if (!targetLoteId) return;
         try {
-            const res = await protocoloApi.downloadZip(activeLoteId, part);
+            const res = await protocoloApi.downloadZip(targetLoteId, part);
             const totalParts = parseInt(res.headers['x-total-parts'] || '1');
             const url = window.URL.createObjectURL(new Blob([res.data]));
             const link = document.createElement('a');
@@ -180,43 +204,84 @@ export default function useProtocoloLote() {
         try {
             await protocoloApi.updateFileName(arquivoId, novoNome);
             // Refresh status
-            if (activeLoteId) {
-                const res = await protocoloApi.getLoteStatus(activeLoteId);
-                setLoteStatus(res.data);
+            if (activeLoteIdRef.current) {
+                const res = await protocoloApi.getLoteStatus(activeLoteIdRef.current);
+                if (res.data.lote_id === activeLoteIdRef.current) {
+                    setLoteStatus(res.data);
+                }
             }
         } catch (e) {
             console.error('Update error:', e);
         }
-    }, [activeLoteId]);
+    }, []);
 
     // Delete file
     const deleteFile = useCallback(async (arquivoId) => {
         try {
             await protocoloApi.deleteFile(arquivoId);
             // Refresh status
-            if (activeLoteId) {
-                const res = await protocoloApi.getLoteStatus(activeLoteId);
-                setLoteStatus(res.data);
+            if (activeLoteIdRef.current) {
+                const res = await protocoloApi.getLoteStatus(activeLoteIdRef.current);
+                if (res.data.lote_id === activeLoteIdRef.current) {
+                    setLoteStatus(res.data);
+                }
             }
         } catch (e) {
             console.error('Delete error:', e);
         }
-    }, [activeLoteId]);
+    }, []);
 
     // Update atendimentos
     const updateAtendimentos = useCallback(async (arquivoId, atendimentos) => {
         try {
             await protocoloApi.updateAtendimentos(arquivoId, atendimentos);
             // Refresh status
-            if (activeLoteId) {
-                const res = await protocoloApi.getLoteStatus(activeLoteId);
-                setLoteStatus(res.data);
+            if (activeLoteIdRef.current) {
+                const res = await protocoloApi.getLoteStatus(activeLoteIdRef.current);
+                if (res.data.lote_id === activeLoteIdRef.current) {
+                    setLoteStatus(res.data);
+                }
             }
         } catch (e) {
             console.error('Update atendimentos error:', e);
             throw e;
         }
-    }, [activeLoteId]);
+    }, []);
+
+    // Gravar atendimentos de um arquivo específico
+    const gravarArquivo = useCallback(async (arquivoId) => {
+        try {
+            await protocoloApi.gravarArquivo(arquivoId);
+            // Refresh status
+            if (activeLoteIdRef.current) {
+                const res = await protocoloApi.getLoteStatus(activeLoteIdRef.current);
+                if (res.data.lote_id === activeLoteIdRef.current) {
+                    setLoteStatus(res.data);
+                }
+            }
+        } catch (e) {
+            console.error('Gravar arquivo error:', e);
+            const msg = e.response?.data?.detail || e.message;
+            setError(msg);
+        }
+    }, []);
+
+    // Gravar atendimentos de todos os arquivos do lote
+    const gravarLote = useCallback(async (loteId = activeLoteIdRef.current, ignoreUnsigned = false) => {
+        if (!loteId) return;
+        try {
+            await protocoloApi.gravarLote(loteId, ignoreUnsigned);
+            // Refresh status
+            const res = await protocoloApi.getLoteStatus(loteId);
+            if (res.data.lote_id === activeLoteIdRef.current) {
+                setLoteStatus(res.data);
+            }
+        } catch (e) {
+            console.error('Gravar lote error:', e);
+            const msg = e.response?.data?.detail || e.message;
+            setError(msg);
+        }
+    }, []);
 
     // Clear active lote
     const clearLote = useCallback(() => {
@@ -246,6 +311,8 @@ export default function useProtocoloLote() {
         updateFileName,
         updateAtendimentos,
         deleteFile,
+        gravarArquivo,
+        gravarLote,
         clearLote,
         setActiveLoteId,
     };

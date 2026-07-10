@@ -57,6 +57,9 @@ export default function Sidebar() {
                 <Link to="/carteirinhas" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/carteirinhas')}`}>
                     <Users size={18} /> Carteirinhas
                 </Link>
+                <Link to="/corpo-clinico" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/corpo-clinico')}`}>
+                    <Users size={18} /> Corpo Clínico
+                </Link>
                 <Link to="/manual" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/manual')}`}>
                     <BookOpen size={18} /> Manual de Utilização
                 </Link>

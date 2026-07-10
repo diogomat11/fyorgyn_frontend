@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RefreshCcw, Download, Settings, ChevronRight, XOctagon } from 'lucide-react';
+import { RefreshCcw, Download, Settings, ChevronRight, XOctagon, Database, Loader } from 'lucide-react';
 
 // Design System
 import Button from '../components/ui/Button';
@@ -10,12 +10,27 @@ import Badge from '../components/ui/Badge';
 import UploadZone from '../components/UploadZone';
 import ProtocoloDashboard from '../components/ProtocoloDashboard';
 import ProtocoloResultsTable from '../components/ProtocoloResultsTable';
+import ProtocoloItensTab from '../components/ProtocoloItensTab';
 
 // Hooks
 import useProtocoloLote from '../hooks/useProtocoloLote';
 
 // API
 import protocoloApi from '../services/protocolo';
+
+// Global state to track zip downloading across unmounts/tab switches
+let globalDownloadingZipId = null;
+let globalDownloadingZipListeners = [];
+
+const setGlobalDownloadingZipId = (id) => {
+    globalDownloadingZipId = id;
+    if (id) {
+        localStorage.setItem('downloadingZipId', String(id));
+    } else {
+        localStorage.removeItem('downloadingZipId');
+    }
+    globalDownloadingZipListeners.forEach(listener => listener(id));
+};
 
 export default function ProtocoloFichas() {
     const {
@@ -36,6 +51,8 @@ export default function ProtocoloFichas() {
         updateFileName,
         updateAtendimentos,
         deleteFile,
+        gravarArquivo,
+        gravarLote,
         clearLote,
         setActiveLoteId,
     } = useProtocoloLote();
@@ -45,6 +62,54 @@ export default function ProtocoloFichas() {
     const [activeTab, setActiveTab] = useState('importacao'); // 'importacao' | 'lotes'
     const [showHistory, setShowHistory] = useState(false);
     const [convenio, setConvenio] = useState('unimed_goiania');
+    const [downloadingZipId, setDownloadingZipId] = useState(() => {
+        const saved = localStorage.getItem('downloadingZipId');
+        return saved ? parseInt(saved) : globalDownloadingZipId;
+    });
+
+    useEffect(() => {
+        const listener = (id) => {
+            setDownloadingZipId(id);
+        };
+        globalDownloadingZipListeners.push(listener);
+        return () => {
+            globalDownloadingZipListeners = globalDownloadingZipListeners.filter(l => l !== listener);
+        };
+    }, []);
+
+    // Local filters for processing results list
+    const [filtroPaciente, setFiltroPaciente] = useState('');
+    const [filtroGuia, setFiltroGuia] = useState('');
+    const [filtroAssinatura, setFiltroAssinatura] = useState('');
+
+    const handleClear = () => {
+        clearLote();
+        setFiltroPaciente('');
+        setFiltroGuia('');
+        setFiltroAssinatura('');
+    };
+
+    const handleSelectLote = async (loteId) => {
+        // Reset filters when switching sessions to prevent stale criteria
+        setFiltroPaciente('');
+        setFiltroGuia('');
+        setFiltroAssinatura('');
+
+        await selectLote(loteId);
+        const lote = lotes.find(l => l.id === loteId);
+        if (lote && lote.convenio) {
+            setConvenio(lote.convenio);
+        }
+    };
+
+    const filteredLotes = lotes.filter(l => l.convenio === convenio);
+
+    // Sync convenio state with the active loteStatus convenio to prevent UI desync
+    useEffect(() => {
+        if (loteStatus && loteStatus.convenio) {
+            setConvenio(loteStatus.convenio);
+        }
+    }, [loteStatus]);
 
     // Fetch lotes on mount
     useEffect(() => {
@@ -81,15 +146,22 @@ export default function ProtocoloFichas() {
     const handleDownloadZip = async (loteIdToDownload = activeLoteId) => {
         if (!loteIdToDownload) return;
         
-        if (loteIdToDownload !== activeLoteId) {
-            await selectLote(loteIdToDownload);
-        }
-        const totalParts = await downloadZip(1);
-        // If multiple parts, download the rest
-        if (totalParts && totalParts > 1) {
-            for (let i = 2; i <= totalParts; i++) {
-                await downloadZip(i);
+        setGlobalDownloadingZipId(loteIdToDownload);
+        try {
+            if (loteIdToDownload !== activeLoteId) {
+                await handleSelectLote(loteIdToDownload);
             }
+            const totalParts = await downloadZip(loteIdToDownload, 1);
+            // If multiple parts, download the rest
+            if (totalParts && totalParts > 1) {
+                for (let i = 2; i <= totalParts; i++) {
+                    await downloadZip(loteIdToDownload, i);
+                }
+            }
+        } catch (err) {
+            console.error("Erro ao baixar zip:", err);
+        } finally {
+            setGlobalDownloadingZipId(null);
         }
     };
 
@@ -119,14 +191,27 @@ export default function ProtocoloFichas() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex justify-between items-center border-b border-border pb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-4">
                 <div>
                     <h1 className="text-2xl font-bold text-text-primary">Protocolo SADT</h1>
                     <span className="text-text-secondary text-sm">
                         Extração inteligente de guias médicas via Gemini AI
                     </span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
+                    {/* Select de Convênio Global */}
+                    <div className="flex items-center gap-2 bg-slate-800/60 border border-border rounded-lg px-3 py-1.5">
+                        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Convênio:</span>
+                        <select
+                            value={convenio}
+                            onChange={(e) => setConvenio(e.target.value)}
+                            className="bg-transparent border-none text-text-primary text-sm font-medium focus:outline-none cursor-pointer"
+                        >
+                            <option value="unimed_goiania" className="bg-slate-900">Unimed Goiânia</option>
+                            <option value="ipasgo" className="bg-slate-900">IPASGO</option>
+                        </select>
+                    </div>
+
                     <button
                         onClick={() => setShowConfig(!showConfig)}
                         className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
@@ -193,6 +278,16 @@ export default function ProtocoloFichas() {
                 >
                     Histórico de Sessões
                 </button>
+                <button
+                    className={`pb-2 text-sm font-medium transition-colors border-b-2 ${
+                        activeTab === 'itens'
+                            ? 'border-blue-500 text-blue-400'
+                            : 'border-transparent text-text-secondary hover:text-text-primary'
+                    }`}
+                    onClick={() => setActiveTab('itens')}
+                >
+                    Itens Protocolados (Sessões)
+                </button>
             </div>
 
             {/* TAB 1: Importação */}
@@ -216,20 +311,7 @@ export default function ProtocoloFichas() {
 
                     {/* Upload Zone */}
                     {!activeLoteId && (
-                        <div className="space-y-4 max-w-xl">
-                            <div className="bg-slate-800/40 border border-border rounded-lg p-4 flex flex-col md:flex-row md:items-center gap-3">
-                                <label className="text-sm font-semibold text-text-primary min-w-[120px]">
-                                    Convênio:
-                                </label>
-                                <select
-                                    value={convenio}
-                                    onChange={(e) => setConvenio(e.target.value)}
-                                    className="bg-slate-900 border border-border rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-blue-500 min-w-[200px]"
-                                >
-                                    <option value="unimed_goiania">Unimed Goiânia</option>
-                                    <option value="ipasgo">IPASGO</option>
-                                </select>
-                            </div>
+                        <div className="space-y-4">
                             <UploadZone
                                 onFilesSelected={handleUpload}
                                 disabled={uploading}
@@ -290,27 +372,172 @@ export default function ProtocoloFichas() {
                                             Reprocessar Erros
                                         </Button>
                                     )}
+                                    {hasSuccess && !isProcessing && (<>
+                                        <Button
+                                            size="sm"
+                                            onClick={() => {
+                                                if (!loteStatus || !loteStatus.arquivos) return;
+
+                                                // 1. Se possuir itens pendentes de revisão, não permite gravar
+                                                const temRevisao = loteStatus.arquivos.some(arq => arq.status === 'revisao');
+                                                if (temRevisao) {
+                                                    alert("Não é possível gravar. Existem itens com dados pendentes de revisão. Corrija as datas destacadas em amarelo antes de prosseguir.");
+                                                    return;
+                                                }
+
+                                                // 2. Se houver itens pendentes de assinatura
+                                                const successfulFiles = loteStatus.arquivos.filter(arq => arq.status === 'sucesso');
+                                                const temPendentesAssinatura = successfulFiles.some(
+                                                    arq => arq.atendimentos && arq.atendimentos.some(a => a.assinatura === 'Não')
+                                                );
+
+                                                if (temPendentesAssinatura) {
+                                                    const querRevisao = window.confirm("Existem itens pendentes de assinatura. Deseja realizar a revisão das assinaturas?");
+                                                    if (querRevisao) {
+                                                        // Se sim: interrompe a gravação para que o usuário revise
+                                                        return;
+                                                    } else {
+                                                        // Se não: pergunta se deseja ignorar pendentes ou gravar todos
+                                                        const ignorarPendentes = window.confirm("Deseja ignorar os itens pendentes de assinatura e gravar apenas os que estão assinados?\n\n- Clique em OK (Sim) para ignorar pendentes e gravar apenas os assinados.\n- Clique em Cancelar (Não) para gravar todos os itens (inclusive os não assinados).");
+                                                        if (ignorarPendentes) {
+                                                            gravarLote(activeLoteId, true);
+                                                        } else {
+                                                            gravarLote(activeLoteId, false);
+                                                        }
+                                                    }
+                                                } else {
+                                                    if (window.confirm("Deseja gravar todos os atendimentos extraídos com sucesso na aba de itens protocolados?")) {
+                                                        gravarLote(activeLoteId, false);
+                                                    }
+                                                }
+                                            }}
+                                            className="bg-emerald-600 hover:bg-emerald-500"
+                                            title="Gravar atendimentos extraídos na base de itens protocolados"
+                                            disabled={downloadingZipId !== null}
+                                        >
+                                            <Database size={14} className="mr-1.5" />
+                                            Gravar Todos os Itens
+                                        </Button>
+
+                                        <Button
+                                            size="sm"
+                                            onClick={() => handleDownloadZip(activeLoteId)}
+                                            className="bg-emerald-700 hover:bg-emerald-600 text-white"
+                                            disabled={downloadingZipId !== null}
+                                            title="Baixar arquivo ZIP com todos os PDFs extraídos com sucesso na sessão"
+                                        >
+                                            {downloadingZipId === activeLoteId ? (
+                                                <>
+                                                    <Loader size={14} className="mr-1.5 animate-spin" />
+                                                    Gerando ZIP...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Download size={14} className="mr-1.5" />
+                                                    Baixar ZIP do Lote
+                                                </>
+                                            )}
+                                        </Button>
+
+                                        {downloadingZipId === activeLoteId && (
+                                            <span className="flex items-center gap-1.5 text-xs text-emerald-400 animate-pulse font-medium ml-2">
+                                                <Loader size={12} className="animate-spin text-emerald-500" />
+                                                Gerando ZIP (aguarde)...
+                                            </span>
+                                        )}
+                                    </>
+                                )}
                                     <Button
                                         size="sm"
                                         variant="ghost"
-                                        onClick={clearLote}
+                                        onClick={handleClear}
                                         className="text-slate-400 hover:text-slate-200"
+                                        title="Limpar todos os dados da tela"
                                     >
                                         Limpar Tela
                                     </Button>
                                 </div>
                             </div>
 
-                            {activeLoteId && loteStatus && (
-                                <ProtocoloResultsTable
-                                    loteId={activeLoteId}
-                                    arquivos={loteStatus.arquivos || []}
-                                    onUpdateFileName={updateFileName}
-                                    onUpdateAtendimentos={updateAtendimentos}
-                                    onDeleteFile={deleteFile}
-                                    downloadFile={downloadFile}
-                                />
-                            )}
+                            {/* Local Filters Bar for Active Session */}
+                            <div className="p-4 border-b border-border bg-slate-900/10 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-text-secondary font-semibold uppercase">Filtrar Paciente</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Pesquisar por nome do paciente..."
+                                        value={filtroPaciente}
+                                        onChange={(e) => setFiltroPaciente(e.target.value)}
+                                        className="bg-slate-800 border border-border text-text-primary text-xs px-2.5 py-1.5 rounded-lg w-full focus:outline-none focus:border-blue-500"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-text-secondary font-semibold uppercase">Filtrar Guia</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Pesquisar por número de guia ou senha..."
+                                        value={filtroGuia}
+                                        onChange={(e) => setFiltroGuia(e.target.value)}
+                                        className="bg-slate-800 border border-border text-text-primary text-xs px-2.5 py-1.5 rounded-lg w-full focus:outline-none focus:border-blue-500"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-text-secondary font-semibold uppercase">Filtro Status Assinatura</label>
+                                    <select
+                                        value={filtroAssinatura}
+                                        onChange={(e) => setFiltroAssinatura(e.target.value)}
+                                        className="bg-slate-800 border border-border text-text-primary text-xs px-2.5 py-1.5 rounded-lg w-full focus:outline-none focus:border-blue-500"
+                                    >
+                                        <option value="">Todos os status</option>
+                                        <option value="assinados">Assinados (Totalmente Assinadas)</option>
+                                        <option value="pendentes">Pendentes (Pendente Assinatura)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {activeLoteId && loteStatus && (() => {
+                                const filteredArquivos = (loteStatus.arquivos || []).filter(arq => {
+                                    if (filtroPaciente.trim()) {
+                                        const nome = arq.nome_beneficiario || '';
+                                        if (!nome.toLowerCase().includes(filtroPaciente.toLowerCase().trim())) {
+                                            return false;
+                                        }
+                                    }
+                                    if (filtroGuia.trim()) {
+                                        const gNormalizada = arq.guia_normalizada || '';
+                                        const gPrestador = arq.numero_guia_prestador || '';
+                                        const gPrincipal = arq.numero_guia_principal || '';
+                                        const query = filtroGuia.toLowerCase().trim();
+                                        if (
+                                            !gNormalizada.toLowerCase().includes(query) &&
+                                            !gPrestador.toLowerCase().includes(query) &&
+                                            !gPrincipal.toLowerCase().includes(query)
+                                        ) {
+                                            return false;
+                                        }
+                                    }
+                                    if (filtroAssinatura === 'assinados') {
+                                        if (!arq.atendimentos || arq.atendimentos.length === 0) return false;
+                                        if (arq.atendimentos.some(a => a.assinatura !== 'Sim')) return false;
+                                    } else if (filtroAssinatura === 'pendentes') {
+                                        if (!arq.atendimentos || arq.atendimentos.length === 0) return false;
+                                        if (!arq.atendimentos.some(a => a.assinatura === 'Não')) return false;
+                                    }
+                                    return true;
+                                });
+
+                                return (
+                                    <ProtocoloResultsTable
+                                        loteId={activeLoteId}
+                                        arquivos={filteredArquivos}
+                                        onUpdateFileName={updateFileName}
+                                        onUpdateAtendimentos={updateAtendimentos}
+                                        onDeleteFile={deleteFile}
+                                        onDownloadFile={downloadFile}
+                                        onGravarArquivo={gravarArquivo}
+                                    />
+                                );
+                            })()}
 
                             {/* Collapsible History Section */}
                             <div className="pt-8 border-t border-border/50">
@@ -319,7 +546,7 @@ export default function ProtocoloFichas() {
                                     className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium mb-4"
                                 >
                                     <ChevronRight size={18} className={`transition-transform duration-200 ${showHistory ? 'rotate-90' : ''}`} />
-                                    Sessões Anteriores ({lotes.length})
+                                    Sessões Anteriores ({filteredLotes.length})
                                 </button>
 
                                 {showHistory && (
@@ -330,6 +557,7 @@ export default function ProtocoloFichas() {
                                                     <thead className="bg-slate-950/50 text-text-secondary text-xs uppercase">
                                                         <tr>
                                                             <th className="px-6 py-3 text-left">ID</th>
+                                                            <th className="px-6 py-3 text-left">Convênio</th>
                                                             <th className="px-6 py-3 text-left">Data</th>
                                                             <th className="px-6 py-3 text-left">Arquivos</th>
                                                             <th className="px-6 py-3 text-left">Status</th>
@@ -337,9 +565,14 @@ export default function ProtocoloFichas() {
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-border">
-                                                        {lotes.slice(0, 10).map(lote => (
+                                                        {filteredLotes.slice(0, 10).map(lote => (
                                                             <tr key={lote.id} className="hover:bg-slate-800/30 transition-colors">
                                                                 <td className="px-6 py-4 text-sm text-text-primary">#{lote.id}</td>
+                                                                <td className="px-6 py-4 text-sm text-text-primary">
+                                                                    <Badge variant="info">
+                                                                        {lote.convenio === 'ipasgo' ? 'IPASGO' : 'Unimed Goiânia'}
+                                                                    </Badge>
+                                                                </td>
                                                                 <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
                                                                     {new Date(lote.created_at).toLocaleString('pt-BR')}
                                                                 </td>
@@ -355,7 +588,7 @@ export default function ProtocoloFichas() {
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        onClick={() => { selectLote(lote.id); setShowHistory(false); }}
+                                                                        onClick={() => { handleSelectLote(lote.id); setShowHistory(false); }}
                                                                         className="text-blue-400 hover:text-blue-300"
                                                                     >
                                                                         Visualizar
@@ -382,11 +615,11 @@ export default function ProtocoloFichas() {
                         <h3 className="text-lg font-semibold text-text-primary mb-4 border-b border-border pb-2">
                             Lotes Concluídos / Histórico
                         </h3>
-                        {lotes.length === 0 ? (
-                            <p className="text-text-secondary text-sm">Nenhuma sessão encontrada.</p>
+                        {filteredLotes.length === 0 ? (
+                            <p className="text-text-secondary text-sm">Nenhuma sessão encontrada para este convênio.</p>
                         ) : (
                             <div className="space-y-3">
-                                {lotes.map(lote => {
+                                {filteredLotes.map(lote => {
                                     const isComplete = lote.status === 'completed' || lote.status === 'cancelled';
                                     const temSucesso = lote.total_sucesso > 0;
                                     
@@ -400,6 +633,9 @@ export default function ProtocoloFichas() {
                                                     <span className="text-text-primary font-bold text-md">
                                                         SESSÃO #{String(lote.id).padStart(3, '0')}
                                                     </span>
+                                                    <Badge variant="info">
+                                                        {lote.convenio === 'ipasgo' ? 'IPASGO' : 'Unimed Goiânia'}
+                                                    </Badge>
                                                     {getStatusLabel(lote)}
                                                 </div>
                                                 <div className="flex items-center gap-4 text-xs text-text-secondary">
@@ -414,10 +650,17 @@ export default function ProtocoloFichas() {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3">
+                                                {downloadingZipId === lote.id && (
+                                                    <span className="flex items-center gap-1.5 text-xs text-emerald-400 animate-pulse font-medium mr-2">
+                                                        <Loader size={12} className="animate-spin text-emerald-500" />
+                                                        Gerando ZIP (aguarde)...
+                                                    </span>
+                                                )}
                                                 <Button
                                                     size="sm"
                                                     variant="ghost"
-                                                    onClick={() => { selectLote(lote.id); setActiveTab('importacao'); }}
+                                                    onClick={() => { handleSelectLote(lote.id); setActiveTab('importacao'); }}
+                                                    disabled={downloadingZipId !== null}
                                                 >
                                                     Ver Detalhes
                                                 </Button>
@@ -426,9 +669,20 @@ export default function ProtocoloFichas() {
                                                         size="sm"
                                                         onClick={() => handleDownloadZip(lote.id)}
                                                         className="bg-emerald-600 hover:bg-emerald-500"
+                                                        disabled={downloadingZipId !== null}
+                                                        title="Baixar arquivo ZIP com todos os PDFs da sessão"
                                                     >
-                                                        <Download size={14} className="mr-1.5" />
-                                                        Baixar ZIP do Lote
+                                                        {downloadingZipId === lote.id ? (
+                                                            <>
+                                                                <Loader size={14} className="mr-1.5 animate-spin" />
+                                                                Gerando...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Download size={14} className="mr-1.5" />
+                                                                Baixar ZIP do Lote
+                                                            </>
+                                                        )}
                                                     </Button>
                                                 )}
                                             </div>
@@ -438,6 +692,13 @@ export default function ProtocoloFichas() {
                             </div>
                         )}
                     </Card>
+                </div>
+            )}
+
+            {/* TAB 3: Protocolo Itens */}
+            {activeTab === 'itens' && (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <ProtocoloItensTab convenioGlobal={convenio} />
                 </div>
             )}
         </div>
