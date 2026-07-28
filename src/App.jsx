@@ -18,6 +18,9 @@ import MainLayout from './layouts/MainLayout';
 import Credenciais from './pages/Credenciais';
 import Usuarios from './pages/Usuarios';
 import CorpoClinico from './pages/CorpoClinico';
+import GestaoConvenios from './pages/GestaoConvenios';
+import PipelineAgendamentos from './pages/PipelineAgendamentos';
+import AgendaFixa from './pages/AgendaFixa';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -73,6 +76,18 @@ export default function App() {
           </PrivateRoute>
         } />
 
+        <Route path="/pipeline" element={
+          <PrivateRoute>
+            <PipelineAgendamentos />
+          </PrivateRoute>
+        } />
+
+        <Route path="/agenda-fixa" element={
+          <PrivateRoute>
+            <AgendaFixa />
+          </PrivateRoute>
+        } />
+
         <Route path="/manual" element={
           <PrivateRoute>
             <Manual />
@@ -100,6 +115,12 @@ export default function App() {
         <Route path="/usuarios" element={
           <AdminRoute>
             <Usuarios />
+          </AdminRoute>
+        } />
+
+        <Route path="/gestao-convenios" element={
+          <AdminRoute>
+            <GestaoConvenios />
           </AdminRoute>
         } />
 

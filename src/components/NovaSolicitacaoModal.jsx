@@ -11,7 +11,7 @@ const TIPOS_ANEXO = [
     { value: 'PTS/Relatório Clínico',  label: 'PTS/Relatório Clínico (RC)'  },
 ];
 
-export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
+export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initialData }) {
     const [loading, setLoading] = useState(false);
     const [convenios, setConvenios] = useState([]);
     const [carteirinhas, setCarteirinhas] = useState([]);
@@ -22,8 +22,8 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
     const todayISO = new Date().toISOString().slice(0, 10);
 
     const [formData, setFormData] = useState({
-        id_convenio: '',
-        carteirinha_id: '',
+        id_convenio: initialData?.id_convenio || '',
+        carteirinha_id: initialData?.carteirinha_id || '',
         observacao: '',
         id_profissional: '',
         medico_mesmo_profissional: true,
@@ -35,9 +35,9 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
     });
 
     // Múltiplos procedimentos
-    const [procedimentos, setProcedimentos] = useState([
-        { codigo: '', qtde: 1 }
-    ]);
+    const [procedimentos, setProcedimentos] = useState(
+        initialData?.procedimentos || [{ codigo: '', qtde: 1 }]
+    );
 
     // Anexos
     const [anexos, setAnexos] = useState([]);
@@ -50,10 +50,11 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
             api.get('/convenios/').then(res => setConvenios(res.data)).catch(console.error);
             api.get('/agendamentos/profissionais?tipo=profissional').then(res => setProfissionais(res.data)).catch(console.error);
             api.get('/agendamentos/profissionais?tipo=medico').then(res => setMedicos(res.data)).catch(console.error);
-            // Reset form
+            
+            // Set form taking initialData into account
             setFormData({ 
-                id_convenio: '', 
-                carteirinha_id: '', 
+                id_convenio: initialData?.id_convenio || '', 
+                carteirinha_id: initialData?.carteirinha_id || '', 
                 observacao: '',
                 id_profissional: '',
                 medico_mesmo_profissional: true,
@@ -63,13 +64,13 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
                 tipoAtendimento: 'TERAPIAS',
                 cod_prestador: '',
             });
-            setProcedimentos([{ codigo: '', qtde: 1 }]);
+            setProcedimentos(initialData?.procedimentos || [{ codigo: '', qtde: 1 }]);
             setAnexos([]);
             setMedicalReports([]);
             setAiReports([]);
             setPtsReports([]);
         }
-    }, [isOpen]);
+    }, [isOpen, initialData]);
 
     useEffect(() => {
         if (formData.id_convenio) {
@@ -341,8 +342,8 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess }) {
         : medicos.find(m => String(m.id_profissional) === String(formData.id_medico));
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-slate-900/50">
                     <h2 className="text-lg font-bold text-text-primary">Solicitar Autorização</h2>
                     <button onClick={onClose} className="text-text-secondary hover:text-red-400 transition-colors">

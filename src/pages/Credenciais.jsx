@@ -39,7 +39,7 @@ export default function Credenciais() {
         try {
             const [credRes, userRes, convRes] = await Promise.all([
                 api.get('/convenios/credentials'),
-                api.get('/api/auth/users'),
+                api.get('/auth/admin/users'),
                 api.get('/convenios/')
             ]);
             setCredentials(credRes.data);

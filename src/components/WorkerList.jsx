@@ -22,7 +22,7 @@ export default function WorkerList({ compact = false }) {
 
     useEffect(() => {
         fetchWorkers();
-        const interval = setInterval(fetchWorkers, 5000);
+        const interval = setInterval(fetchWorkers, 20000);
         return () => clearInterval(interval);
     }, []);
 

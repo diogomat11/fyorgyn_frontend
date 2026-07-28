@@ -3,13 +3,21 @@
 export const formatDate = (dateString) => {
     if (!dateString) return '-';
     try {
+        const clean = String(dateString).trim();
+        if (clean.length >= 10 && clean.includes('-')) {
+            const parts = clean.substring(0, 10).split('-');
+            if (parts.length === 3 && parts[0].length === 4) {
+                return `${parts[2]}-${parts[1]}-${parts[0]}`; // YYYY-MM-DD to DD-MM-YYYY
+            }
+        }
         const date = new Date(dateString);
-        return date.toLocaleDateString('pt-BR', {
+        const formatted = date.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
-            timeZone: 'UTC' // Ensure consistency if data comes as UTC
+            timeZone: 'UTC'
         });
+        return formatted.replace(/\//g, '-');
     } catch (e) {
         return dateString;
     }

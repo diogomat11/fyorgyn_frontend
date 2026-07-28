@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
 import { Play, Filter, RefreshCcw, Trash2, Clock, CheckCircle, AlertCircle, XCircle, Users, Activity, Upload, Download, FileSpreadsheet } from 'lucide-react';
@@ -16,8 +17,15 @@ import CheckBox from '../components/ui/CheckBox';
 import WorkerList from '../components/WorkerList';
 
 export default function Importacoes() {
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const username = localStorage.getItem('username') || 'Usuário';
+
+  // Reset de paginação ao trocar de rota/página
+  useEffect(() => {
+    setPage(1);
+  }, [location.pathname]);
+
   // Convenio State
   const [convenios, setConvenios] = useState([]);
   const [selectedConvenio, setSelectedConvenio] = useState('');
@@ -88,6 +96,7 @@ export default function Importacoes() {
 
   // Jobs List State
   const [jobs, setJobs] = useState([]);
+  const [pollInterval, setPollInterval] = useState(30000); // Dynamic poll interval (30s default)
   const [totalJobs, setTotalJobs] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -119,13 +128,26 @@ export default function Importacoes() {
   }, []);
 
   useEffect(() => {
+    const hasActiveJobs = jobs.some(j => j.status === 'pending' || j.status === 'processing');
+    if (hasActiveJobs) {
+      if (pollInterval !== 5000) {
+        setPollInterval(5000); // Fast poll when there is activity
+      }
+    } else {
+      if (pollInterval !== 30000) {
+        setPollInterval(30000); // Slow poll when idle
+      }
+    }
+  }, [jobs, pollInterval]);
+
+  useEffect(() => {
     fetchJobs();
     const interval = setInterval(() => {
       fetchJobs();
       fetchStats();
-    }, 5000); // Poll for updates
+    }, pollInterval); // Dynamic poll interval
     return () => clearInterval(interval);
-  }, [page, pageSize, filters, selectedConvenio]);
+  }, [page, pageSize, filters, selectedConvenio, pollInterval]);
 
   const [stats, setStats] = useState(null);
 
@@ -629,7 +651,7 @@ export default function Importacoes() {
               <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-sm text-indigo-400 font-medium h-[42px] flex items-center justify-center">
                 ⚙️ Portal Completo (Sem Filtros)
               </div>
-            ) : importRotina === '1_fature' ? (
+            ) : (importRotina === '1_fature' || importRotina === 'op1_consultar_guias_fature') ? (
               <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-sm text-indigo-400 font-medium h-[42px] flex items-center justify-center">
                 📊 Lote Excel (Automático)
               </div>
@@ -963,7 +985,7 @@ export default function Importacoes() {
             </>
           )}
 
-          {(importType === 'excel_batch' || importRotina === '1_fature') ? (
+          {(importType === 'excel_batch' || importRotina === '1_fature' || importRotina === 'op1_consultar_guias_fature') ? (
             <>
               <div className="md:col-span-12">
                 <div className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -1137,7 +1159,7 @@ export default function Importacoes() {
             )
           )}
 
-          {(importType !== 'excel_batch' && importRotina !== '1_fature') && (
+          {(importType !== 'excel_batch' && importRotina !== '1_fature' && importRotina !== 'op1_consultar_guias_fature') && (
             <div className="md:col-span-2">
               <Button onClick={handleCreateJob} className="w-full h-[42px]">
                 <Play size={16} /> Criar

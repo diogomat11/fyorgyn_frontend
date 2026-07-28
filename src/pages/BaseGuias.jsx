@@ -155,9 +155,15 @@ export default function BaseGuias() {
         }).catch(console.error);
     }, []);
 
+    // Reset de paginação para a página 1 ao alterar aba ou rota
+    useEffect(() => {
+        setPage(1);
+    }, [activeTab, location.pathname]);
+
     useEffect(() => {
         fetchGuias();
     }, [page, pageSize, filters, activeTab]);
+
 
     const fetchGuias = async () => {
         setLoading(true);

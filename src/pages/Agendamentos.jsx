@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield } from 'lucide-react';
+import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield, RefreshCw } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
 // Design System components matching the app's aesthetic
@@ -78,11 +79,17 @@ function TimeoutPie({ timestampCaptura }) {
 }
 
 export default function Agendamentos() {
+    const location = useLocation();
     const [agendamentos, setAgendamentos] = useState([]);
     const [totalItems, setTotalItems] = useState(0);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [loading, setLoading] = useState(false);
+
+    // Reset de paginação ao trocar de rota/página
+    useEffect(() => {
+        setPage(1);
+    }, [location.pathname]);
 
     // Filters
     const [convenios, setConvenios] = useState([]);
@@ -96,9 +103,58 @@ export default function Agendamentos() {
         procedimento: ''
     });
 
+    useEffect(() => {
+        const params = new URLSearchParams();
+        if (filters.data_inicio) params.append('data_inicio', filters.data_inicio);
+        if (filters.data_fim) params.append('data_fim', filters.data_fim);
+        api.get(`/convenios/active-in-range?${params.toString()}`)
+            .then(res => setConvenios(res.data))
+            .catch(console.error);
+    }, [filters.data_inicio, filters.data_fim]);
+
+    const exportToXLSX = () => {
+        if (!agendamentos.length) {
+            alert("Nenhum dado para exportar.");
+            return;
+        }
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+        csvContent += "Paciente;Carteirinha;Data;Hora;Profissional;Convenio;Guia;Procedimento;Status\n";
+
+        agendamentos.forEach(a => {
+            const row = [
+                `"${a.Nome_Paciente || ''}"`,
+                `"${a.carteirinha || ''}"`,
+                `"${formatDate(a.data)}"`,
+                `"${a.hora_inicio ? a.hora_inicio.substring(0, 5) : ''}"`,
+                `"${a.Nome_profissional || ''}"`,
+                `"${a.nome_convenio || ''}"`,
+                `"${a.numero_guia || ''}"`,
+                `"${a.nome_procedimento || a.cod_procedimento_aut || ''}"`,
+                `"${a.Status || ''}"`
+            ].join(";");
+            csvContent += row + "\n";
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `agendamentos_export_${new Date().toISOString().substring(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     // Subscriptions for Batches
     const [selectedIds, setSelectedIds] = useState([]);
     const [capturaModal, setCapturaModal] = useState({ isOpen: false, resolve: null });
+
+    // Modal de Sincronização ABA_clmf
+    const [syncModal, setSyncModal] = useState({
+        isOpen: false,
+        data_inicio: '',
+        data_fim: '',
+        id_paciente: ''
+    });
 
     const confirmCaptura = () => new Promise((resolve) => {
         setCapturaModal({ isOpen: true, resolve });
@@ -109,8 +165,29 @@ export default function Agendamentos() {
         setCapturaModal({ isOpen: false, resolve: null });
     };
 
+    const handleTriggerSync = async () => {
+        setLoading(true);
+        try {
+            const res = await api.post('/agendamentos/sincronizar', {
+                data_inicio: syncModal.data_inicio || null,
+                data_fim: syncModal.data_fim || null,
+                id_paciente: syncModal.id_paciente || "0",
+                id_convenio: 101
+            });
+            alert(res.data.message || "Job de sincronização enfileirado com sucesso!");
+            setSyncModal(prev => ({ ...prev, isOpen: false }));
+            loadData();
+        } catch (error) {
+            console.error(error);
+            const msg = error.response?.data?.detail || "Erro ao solicitar sincronização de agendamentos.";
+            alert(msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // KPIs
-    const [kpis, setKpis] = useState({ total: 0, confirmados: 0, a_confirmar: 0, faltas: 0 });
+    const [kpis, setKpis] = useState({ total: 0, confirmados: 0, a_confirmar: 0, faltas: 0, sem_carteirinha: 0 });
 
     useEffect(() => {
         // Load Convenios on mount
@@ -151,6 +228,7 @@ export default function Agendamentos() {
                 confirmados: response.data.kpis.confirmados,
                 a_confirmar: response.data.kpis.a_confirmar,
                 faltas: response.data.kpis.faltas,
+                sem_carteirinha: response.data.kpis.sem_carteirinha || 0
             });
         } catch (error) {
             console.error('Erro ao carregar agendamentos:', error);
@@ -297,7 +375,28 @@ export default function Agendamentos() {
                         <p className="text-sm text-text-secondary mt-1">Gerencie a agenda, autorizações vinculadas e inicie robôs de faturamento.</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                        onClick={exportToXLSX}
+                        variant="outline"
+                        className="flex items-center gap-2 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10"
+                    >
+                        <Download className="w-5 h-5 text-emerald-400" />
+                        Exportar XLSX
+                    </Button>
+                    <button
+                        onClick={() => setSyncModal({
+                            isOpen: true,
+                            data_inicio: filters.data_inicio || new Date().toISOString().split('T')[0],
+                            data_fim: filters.data_fim || new Date().toISOString().split('T')[0],
+                            id_paciente: ''
+                        })}
+                        disabled={loading}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-medium transition-colors disabled:opacity-50"
+                    >
+                        <RefreshCw className="w-5 h-5" />
+                        Sincronizar Agendamentos
+                    </button>
                     <button
                         onClick={handleVincularGuias}
                         disabled={loading}
@@ -310,22 +409,26 @@ export default function Agendamentos() {
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <Card className="p-4 flex flex-col justify-center items-center bg-slate-800/50">
-                    <span className="text-sm text-text-secondary text-center">Total de Agendamentos</span>
-                    <span className="text-2xl font-bold text-slate-100">{kpis.total}</span>
+                    <span className="text-xs text-text-secondary text-center">Total Agendamentos</span>
+                    <span className="text-xl font-bold text-slate-100">{kpis.total}</span>
                 </Card>
                 <Card className="p-4 flex flex-col justify-center items-center bg-emerald-500/10 border-emerald-500/20">
-                    <span className="text-sm text-emerald-400 text-center">Confirmados</span>
-                    <span className="text-2xl font-bold text-emerald-300">{kpis.confirmados}</span>
+                    <span className="text-xs text-emerald-400 text-center">Confirmados</span>
+                    <span className="text-xl font-bold text-emerald-300">{kpis.confirmados}</span>
                 </Card>
                 <Card className="p-4 flex flex-col justify-center items-center bg-amber-500/10 border-amber-500/20">
-                    <span className="text-sm text-amber-400 text-center">A Confirmar</span>
-                    <span className="text-2xl font-bold text-amber-300">{kpis.a_confirmar}</span>
+                    <span className="text-xs text-amber-400 text-center">A Confirmar</span>
+                    <span className="text-xl font-bold text-amber-300">{kpis.a_confirmar}</span>
                 </Card>
                 <Card className="p-4 flex flex-col justify-center items-center bg-red-500/10 border-red-500/20">
-                    <span className="text-sm text-red-400 text-center">Faltas</span>
-                    <span className="text-2xl font-bold text-red-300">{kpis.faltas}</span>
+                    <span className="text-xs text-red-400 text-center">Faltas</span>
+                    <span className="text-xl font-bold text-red-300">{kpis.faltas}</span>
+                </Card>
+                <Card className="p-4 flex flex-col justify-center items-center bg-purple-500/10 border-purple-500/20">
+                    <span className="text-xs text-purple-400 text-center">Sem Carteirinha</span>
+                    <span className="text-xl font-bold text-purple-300">{kpis.sem_carteirinha}</span>
                 </Card>
             </div>
 
@@ -573,6 +676,79 @@ export default function Agendamentos() {
                             </Button>
                             <Button variant="primary" onClick={() => handleCapturaChoice(true)} className="bg-primary hover:bg-primary-hover text-white">
                                 Sim
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Sincronização de Agendamentos (Portal ABA) */}
+            {syncModal.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl max-w-md w-full">
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-3">
+                            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                                <RefreshCw className="w-5 h-5 text-emerald-400" />
+                                Sincronizar Agendamentos
+                            </h3>
+                            <button
+                                onClick={() => setSyncModal(prev => ({ ...prev, isOpen: false }))}
+                                className="text-slate-400 hover:text-white"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <p className="text-xs text-slate-400 mb-4">
+                            Busque e sincronize atendimentos diretamente do portal ABA_clmf para o período selecionado.
+                        </p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-300 mb-1">ID do Paciente (Opcional)</label>
+                                <Input
+                                    placeholder="Deixe 0 para buscar todos os pacientes"
+                                    value={syncModal.id_paciente}
+                                    onChange={(e) => setSyncModal(prev => ({ ...prev, id_paciente: e.target.value }))}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-300 mb-1">Data Início</label>
+                                    <Input
+                                        type="date"
+                                        value={syncModal.data_inicio}
+                                        onChange={(e) => setSyncModal(prev => ({ ...prev, data_inicio: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-300 mb-1">Data Fim</label>
+                                    <Input
+                                        type="date"
+                                        value={syncModal.data_fim}
+                                        onChange={(e) => setSyncModal(prev => ({ ...prev, data_fim: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-6">
+                            <Button
+                                variant="secondary"
+                                onClick={() => setSyncModal(prev => ({ ...prev, isOpen: false }))}
+                                className="bg-slate-700 hover:bg-slate-600 text-white"
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                variant="primary"
+                                disabled={loading}
+                                onClick={handleTriggerSync}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                                Sincronizar
                             </Button>
                         </div>
                     </div>

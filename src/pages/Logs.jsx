@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { RefreshCcw } from 'lucide-react';
 import { formatDateTime } from '../utils/formatters';
@@ -10,11 +11,18 @@ import Badge from '../components/ui/Badge';
 import WorkerList from '../components/WorkerList';
 
 export default function Logs() {
+  const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // Pagination
   const [page, setPage] = useState(1);
+
+  // Reset de paginação ao trocar de rota/página
+  useEffect(() => {
+    setPage(1);
+  }, [location.pathname]);
+
   const [pageSize, setPageSize] = useState(50);
   const [totalItems, setTotalItems] = useState(0);
 
@@ -35,7 +43,7 @@ export default function Logs() {
 
   useEffect(() => {
     fetchLogs();
-    const interval = setInterval(fetchLogs, 5000);
+    const interval = setInterval(fetchLogs, 30000);
     return () => clearInterval(interval);
   }, [page, pageSize]);
 

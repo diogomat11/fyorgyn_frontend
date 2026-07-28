@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { Trash2, Upload, Plus, Edit, ChevronLeft, ChevronRight, Search, X, Check, X as XIcon } from 'lucide-react';
 import EditCarteirinhaModal from '../components/EditCarteirinhaModal';
@@ -158,7 +159,8 @@ export default function Carteirinhas() {
         status: '',
         codigo_beneficiario: '',
         paciente: '',
-        id_convenio: ''
+        id_convenio: '',
+        sem_carteirinha: ''
     });
 
     const [convenios, setConvenios] = useState([]);
@@ -224,7 +226,8 @@ export default function Carteirinhas() {
                 status: filters.status,
                 codigo_beneficiario: filters.codigo_beneficiario,
                 paciente: filters.paciente,
-                id_convenio: filters.id_convenio || undefined
+                id_convenio: filters.id_convenio || undefined,
+                sem_carteirinha: filters.sem_carteirinha === 'true' ? true : undefined
             };
 
             const res = await api.get('/carteirinhas/', { params });
@@ -321,6 +324,19 @@ export default function Carteirinhas() {
         } catch (e) {
             alert("Erro ao criar: " + (e.response?.data?.detail || e.message));
         } finally { setLoading(false); }
+    };
+
+    const handleCadastrarVirtual = (item) => {
+        setNewCarteirinha({
+            carteirinha: '',
+            paciente: item.paciente || '',
+            id_paciente: item.id_paciente || '',
+            codigo_beneficiario: '',
+            status: 'ativo',
+            id_convenio: item.id_convenio ? item.id_convenio.toString() : ''
+        });
+        setShowCreateForm(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     return (
@@ -476,9 +492,15 @@ export default function Carteirinhas() {
                             <option value="inativo">Inativo</option>
                         </Select>
                     </div>
+                    <div className="w-full md:w-44">
+                        <Select value={filters.sem_carteirinha} onChange={(e) => { setFilters({ ...filters, sem_carteirinha: e.target.value }); setPage(1); }}>
+                            <option value="">Carteirinha: Todos</option>
+                            <option value="true">Sem Carteirinha</option>
+                        </Select>
+                    </div>
                     <Button
                         variant="ghost"
-                        onClick={() => setFilters({ search: '', status: '', codigo_beneficiario: '', paciente: '', id_convenio: '' })}
+                        onClick={() => setFilters({ search: '', status: '', codigo_beneficiario: '', paciente: '', id_convenio: '', sem_carteirinha: '' })}
                         className="text-text-secondary hover:text-text-primary whitespace-nowrap"
                     >
                         Limpar
@@ -513,25 +535,53 @@ export default function Carteirinhas() {
                         </thead>
                         <tbody className="divide-y divide-border">
                             {sortedCarteirinhas.map(c => (
-                                <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
-                                    <td className="px-6 py-4 text-sm text-text-secondary font-mono">{c.id}</td>
-                                    <td className="px-6 py-4 text-sm text-text-secondary font-mono whitespace-nowrap">{c.carteirinha}</td>
-                                    <td className="px-6 py-4 text-sm text-text-primary font-medium whitespace-nowrap">{c.paciente || '-'}</td>
+                                <tr key={c.id || `v-${c.id_paciente}-${c.id_convenio}`} className="hover:bg-slate-800/30 transition-colors">
+                                    <td className="px-6 py-4 text-sm text-text-secondary font-mono">{c.id || 'Virtual'}</td>
+                                    <td className="px-6 py-4 text-sm text-text-secondary font-mono whitespace-nowrap">
+                                        {c.is_virtual ? (
+                                            <Badge variant="warning">Pendente</Badge>
+                                        ) : (
+                                            c.carteirinha
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-text-primary font-medium whitespace-nowrap">
+                                        {c.paciente || '-'}
+                                        {c.is_virtual && c.nome_convenio && (
+                                            <div className="text-[10px] text-text-secondary">({c.nome_convenio})</div>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{c.id_paciente || '-'}</td>
                                     <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{c.codigo_beneficiario || '-'}</td>
                                     <td className="px-6 py-4 text-sm">
-                                        <StatusToggle
-                                            carteirinha={c}
-                                            onToggled={fetchCarteirinhas}
-                                        />
+                                        {c.is_virtual ? (
+                                            <span className="text-amber-500 font-medium text-xs">Pendente Cadastro</span>
+                                        ) : (
+                                            <StatusToggle
+                                                carteirinha={c}
+                                                onToggled={fetchCarteirinhas}
+                                            />
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-sm flex gap-2">
-                                        <Button size="sm" variant="ghost" onClick={() => setEditingItem(c)} className="h-8 w-8 p-0">
-                                            <Edit size={16} className="text-primary" />
-                                        </Button>
-                                        <Button size="sm" variant="ghost" onClick={() => handleDelete(c.id)} className="h-8 w-8 p-0">
-                                            <Trash2 size={16} className="text-red-500" />
-                                        </Button>
+                                        {c.is_virtual ? (
+                                            <Button
+                                                size="sm"
+                                                variant="primary"
+                                                onClick={() => handleCadastrarVirtual(c)}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-1 px-3 rounded"
+                                            >
+                                                Cadastrar
+                                            </Button>
+                                        ) : (
+                                            <>
+                                                <Button size="sm" variant="ghost" onClick={() => setEditingItem(c)} className="h-8 w-8 p-0">
+                                                    <Edit size={16} className="text-primary" />
+                                                </Button>
+                                                <Button size="sm" variant="ghost" onClick={() => handleDelete(c.id)} className="h-8 w-8 p-0">
+                                                    <Trash2 size={16} className="text-red-500" />
+                                                </Button>
+                                            </>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

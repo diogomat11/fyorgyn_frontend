@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { listPei, overridePei, getPeiStats, exportPei } from '../services/pei';
 import { Edit2, Save, Filter, X, Download, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import Pagination from '../components/Pagination';
@@ -18,7 +19,7 @@ const ProcessingModal = ({ isOpen }) => {
                 <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
                 <div className="text-center">
                     <h3 className="text-xl font-bold text-text-primary mb-2">Exportando Dados...</h3>
-                    <p className="text-text-secondary text-sm">Isso pode levar alguns segundos dependendo do volume de dados.</p>
+                    <p className="text-text-secondary text-sm">Aguarde enquanto geramos seu arquivo Excel.</p>
                 </div>
             </div>
         </div>

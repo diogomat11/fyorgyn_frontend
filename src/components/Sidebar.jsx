@@ -1,11 +1,53 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, Activity, LogOut, Table, BookOpen, Calendar, Zap, Layers, Sparkles, Key } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Activity, LogOut, Table, BookOpen, Calendar, Zap, Layers, Sparkles, Key, GitBranch, ChevronDown, ChevronRight, Folder } from 'lucide-react';
+
+const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    return (
+        <div className="mt-2 mb-2">
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-300 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    <Icon size={16} /> {title}
+                </div>
+                {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+            {isOpen && (
+                <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1 mt-1">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default function Sidebar() {
     const location = useLocation();
     const navigate = useNavigate();
-    const isActive = (path) => location.pathname === path ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50';
+    
+    // Adjusted isActive to only check exact match or query params where needed, 
+    // returning the class string directly since we'll use it in the sub-items.
+    const getLinkClass = (path, exact = false) => {
+        const isMatch = exact ? location.pathname === path && !location.search : (location.pathname === path || (path.includes('?') && location.pathname + location.search === path));
+        // Also handle special case for guias autorizadas which might have no search param
+        if (path === '/guias?aba=autorizadas' && location.pathname === '/guias' && !location.search.includes('aba=')) {
+            return 'px-4 py-2 text-sm font-medium rounded-lg transition-all bg-primary/10 text-primary border-r-2 border-primary';
+        }
+
+        return isMatch 
+            ? 'px-4 py-2 text-sm font-medium rounded-lg transition-all bg-primary/10 text-primary border-r-2 border-primary' 
+            : 'px-4 py-2 text-sm font-medium rounded-lg transition-all text-slate-400 hover:text-slate-100 hover:bg-slate-800/50';
+    };
+
+    const getTopLinkClass = (path) => {
+        return (location.pathname === path || (path === '/' && location.pathname === '/jobs'))
+            ? 'flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all bg-primary/10 text-primary border-r-2 border-primary'
+            : 'flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all text-slate-400 hover:text-slate-100 hover:bg-slate-800/50';
+    };
+
     const username = localStorage.getItem('username') || 'Usuário';
     const isAdmin = localStorage.getItem('is_admin') === 'true';
 
@@ -28,76 +70,48 @@ export default function Sidebar() {
                 </div>
             </div>
 
-            <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-                <Link to="/" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/') || isActive('/jobs') ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
+            <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
+                <Link to="/" className={getTopLinkClass('/')}>
                     <FileText size={18} /> Importações
                 </Link>
-                <div className="mt-2 mb-2">
-                    <div className="flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider">
-                        <Table size={16} /> Autorizações
-                    </div>
-                    <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1">
-                        <Link to="/guias?aba=autorizadas" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/guias' && (location.search === '?aba=autorizadas' || !location.search.includes('aba=')) ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Guias
-                        </Link>
-                        <Link to="/guias?aba=solicitacoes" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/guias' && location.search === '?aba=solicitacoes' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Solicitações
-                        </Link>
-                    </div>
-                </div>
-                <Link to="/pei" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/pei')}`}>
-                    <Table size={18} /> Gestão PEI
-                </Link>
-                <Link to="/terapias" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/terapias')}`}>
-                    <Sparkles size={18} /> Gestão Terapias
-                </Link>
-                <Link to="/agendamentos" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/agendamentos')}`}>
-                    <Calendar size={18} /> Agendamentos
-                </Link>
-                <Link to="/carteirinhas" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/carteirinhas')}`}>
-                    <Users size={18} /> Carteirinhas
-                </Link>
-                <Link to="/corpo-clinico" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/corpo-clinico')}`}>
-                    <Users size={18} /> Corpo Clínico
-                </Link>
-                <Link to="/manual" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/manual')}`}>
+
+                <CollapsibleSection title="Cadastros" icon={Folder}>
+                    <Link to="/carteirinhas" className={getLinkClass('/carteirinhas')}>Carteirinhas</Link>
+                    <Link to="/corpo-clinico" className={getLinkClass('/corpo-clinico')}>Corpo Clínico</Link>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Autorizações" icon={Table}>
+                    <Link to="/guias?aba=autorizadas" className={getLinkClass('/guias?aba=autorizadas')}>Guias</Link>
+                    <Link to="/guias?aba=solicitacoes" className={getLinkClass('/guias?aba=solicitacoes')}>Solicitações</Link>
+                    <Link to="/pei" className={getLinkClass('/pei')}>Gestão PEI</Link>
+                    <Link to="/terapias" className={getLinkClass('/terapias')}>Gestão Terapias</Link>
+                    <Link to="/agenda-fixa" className={getLinkClass('/agenda-fixa')}>Agenda Fixa</Link>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Faturamento" icon={Layers}>
+                    <Link to="/agendamentos" className={getLinkClass('/agendamentos')}>Agendamentos</Link>
+                    <Link to="/pipeline" className={getLinkClass('/pipeline')}>Workflow Faturamento</Link>
+                    <Link to="/faturamento/lotes" className={getLinkClass('/faturamento/lotes')}>Lotes - Convênios</Link>
+                    <Link to="/faturamento/agendamentos" className={getLinkClass('/faturamento/agendamentos')}>Lotes Agendamentos</Link>
+                    <Link to="/faturamento/conciliacao" className={getLinkClass('/faturamento/conciliacao')}>Conciliação</Link>
+                    <Link to="/faturamento/protocolo" className={getLinkClass('/faturamento/protocolo')}>Protocolo SADT</Link>
+                </CollapsibleSection>
+
+                <Link to="/manual" className={getTopLinkClass('/manual')}>
                     <BookOpen size={18} /> Manual de Utilização
                 </Link>
-                <Link to="/logs" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/logs')}`}>
+                <Link to="/logs" className={getTopLinkClass('/logs')}>
                     <Activity size={18} /> Logs
                 </Link>
+
                 {isAdmin && (
-                    <>
-                        <Link to="/prioridades" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/prioridades')}`}>
-                            <Zap size={18} /> Prioridades
-                        </Link>
-                        <Link to="/credenciais" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/credenciais')}`}>
-                            <Key size={18} /> Credenciais
-                        </Link>
-                        <Link to="/usuarios" className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${isActive('/usuarios')}`}>
-                            <Users size={18} /> Usuários
-                        </Link>
-                    </>
+                    <CollapsibleSection title="Administração" icon={Key} defaultOpen={false}>
+                        <Link to="/prioridades" className={getLinkClass('/prioridades')}>Prioridades</Link>
+                        <Link to="/credenciais" className={getLinkClass('/credenciais')}>Credenciais</Link>
+                        <Link to="/gestao-convenios" className={getLinkClass('/gestao-convenios')}>Gestão Convênios</Link>
+                        <Link to="/usuarios" className={getLinkClass('/usuarios')}>Usuários</Link>
+                    </CollapsibleSection>
                 )}
-                <div className="mt-2 mb-2">
-                    <div className="flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-500 uppercase tracking-wider">
-                        <Layers size={16} /> Faturamento
-                    </div>
-                    <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1">
-                        <Link to="/faturamento/lotes" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/lotes' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Lotes - Convênios
-                        </Link>
-                        <Link to="/faturamento/agendamentos" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/agendamentos' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Lotes Agendamentos
-                        </Link>
-                        <Link to="/faturamento/conciliacao" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/conciliacao' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Conciliação
-                        </Link>
-                        <Link to="/faturamento/protocolo" className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${location.pathname === '/faturamento/protocolo' ? 'bg-primary/10 text-primary border-r-2 border-primary' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'}`}>
-                            Protocolo SADT
-                        </Link>
-                    </div>
-                </div>
             </nav>
 
             <div className="p-4 border-t border-slate-800">
