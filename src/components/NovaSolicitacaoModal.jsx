@@ -45,11 +45,21 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
     const [aiReports, setAiReports] = useState([]);
     const [ptsReports, setPtsReports] = useState([]);
 
+    const [showCrmModal, setShowCrmModal] = useState(false);
+    const [crmLoading, setCrmLoading] = useState(false);
+    const [crmFormData, setCrmFormData] = useState({ uf: 'GO', registro: '', nome: '' });
+
+    const fetchMedicos = () => {
+        api.get('/agendamentos/profissionais?tipo=medico')
+            .then(res => setMedicos(res.data))
+            .catch(console.error);
+    };
+
     useEffect(() => {
         if (isOpen) {
             api.get('/convenios/').then(res => setConvenios(res.data)).catch(console.error);
             api.get('/agendamentos/profissionais?tipo=profissional').then(res => setProfissionais(res.data)).catch(console.error);
-            api.get('/agendamentos/profissionais?tipo=medico').then(res => setMedicos(res.data)).catch(console.error);
+            fetchMedicos();
             
             // Set form taking initialData into account
             setFormData({ 
@@ -71,6 +81,7 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
             setPtsReports([]);
         }
     }, [isOpen, initialData]);
+
 
     useEffect(() => {
         if (formData.id_convenio) {
@@ -513,16 +524,25 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                         
                         {!formData.medico_mesmo_profissional && (
                             <div>
-                                <Select
+                                <SearchableSelect
+                                    options={medicos.map(m => ({
+                                        value: m.id_profissional,
+                                        label: `${m.nome} (CRM ${m.registro || ''}/${m.UF || ''})`
+                                    }))}
                                     value={formData.id_medico}
-                                    onChange={(e) => setFormData({ ...formData, id_medico: e.target.value })}
-                                    required={!formData.medico_mesmo_profissional}
-                                >
-                                    <option value="">Selecione o Médico</option>
-                                    {medicos.map(m => (
-                                        <option key={m.id_profissional} value={m.id_profissional}>{m.nome}</option>
-                                    ))}
-                                </Select>
+                                    onChange={(val) => setFormData(prev => ({ ...prev, id_medico: val }))}
+                                    placeholder="Selecione ou busque o médico..."
+                                    onAddNew={(searchTerm) => {
+                                        const isNumber = /^\d+$/.test(searchTerm.trim());
+                                        setCrmFormData({
+                                            uf: 'GO',
+                                            registro: isNumber ? searchTerm.trim() : '',
+                                            nome: !isNumber ? searchTerm.trim() : ''
+                                        });
+                                        setShowCrmModal(true);
+                                    }}
+                                    addNewText="Importar do CRM (+)"
+                                />
                             </div>
                         )}
 
@@ -725,6 +745,115 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                     </div>
                 </form>
             </div>
+
+            {/* Modal de Importação de Médico por CRM (CFM) */}
+            {showCrmModal && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <Plus size={18} className="text-blue-400" />
+                                Importar Médico do CRM
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowCrmModal(false)}
+                                className="text-slate-400 hover:text-white"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="col-span-1">
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">UF *</label>
+                                    <input
+                                        type="text"
+                                        maxLength={2}
+                                        value={crmFormData.uf}
+                                        onChange={(e) => setCrmFormData({ ...crmFormData, uf: e.target.value.toUpperCase() })}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-white focus:border-blue-500 outline-none uppercase text-center font-bold"
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">CRM (Registro)</label>
+                                    <input
+                                        type="text"
+                                        value={crmFormData.registro}
+                                        onChange={(e) => setCrmFormData({ ...crmFormData, registro: e.target.value })}
+                                        placeholder="Ex: 29278"
+                                        className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-white focus:border-blue-500 outline-none font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">Nome do Médico (Opcional)</label>
+                                <input
+                                    type="text"
+                                    value={crmFormData.nome}
+                                    onChange={(e) => setCrmFormData({ ...crmFormData, nome: e.target.value })}
+                                    placeholder="Ex: João da Silva"
+                                    className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-white focus:border-blue-500 outline-none"
+                                />
+                            </div>
+
+                            <p className="text-xs text-slate-400">
+                                A consulta irá ao portal do Conselho Federal de Medicina (CFM), trará a situação e especialidades, e salvará o médico na base.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-3 border-t border-slate-700">
+                            <button
+                                type="button"
+                                onClick={() => setShowCrmModal(false)}
+                                disabled={crmLoading}
+                                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white rounded"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                disabled={crmLoading || !crmFormData.uf || (!crmFormData.registro && !crmFormData.nome)}
+                                onClick={async () => {
+                                    setCrmLoading(true);
+                                    try {
+                                        const res = await api.post('/crm/consulta', crmFormData);
+                                        const data = res.data;
+                                        if (data.status === 'success' && data.total_importados > 0) {
+                                            alert(`Sucesso! ${data.total_importados} médico(s) importado(s) com sucesso.`);
+                                            setShowCrmModal(false);
+                                            // Atualizar lista de médicos no frontend
+                                            const resMedicos = await api.get('/agendamentos/profissionais?tipo=medico');
+                                            setMedicos(resMedicos.data || []);
+                                            // Se trouxe médicos, seleciona o médico pelo CRM
+                                            if (crmFormData.registro) {
+                                                const novomed = resMedicos.data.find(m => String(m.registro) === String(crmFormData.registro));
+                                                if (novomed) {
+                                                    setFormData(prev => ({ ...prev, id_medico: novomed.id_profissional }));
+                                                }
+                                            }
+                                        } else {
+                                            alert(data.message || 'Nenhum médico encontrado com os parâmetros fornecidos.');
+                                        }
+                                    } catch (err) {
+                                        console.error("Erro ao importar CRM:", err);
+                                        const msg = err.response?.data?.detail || 'Erro ao consultar portal CRM.';
+                                        alert(msg);
+                                    } finally {
+                                        setCrmLoading(false);
+                                    }
+                                }}
+                                className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded flex items-center gap-1 disabled:opacity-50"
+                            >
+                                {crmLoading ? 'Consultando CFM...' : 'Consultar e Importar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+

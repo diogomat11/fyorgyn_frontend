@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ChevronDown, Check } from 'lucide-react';
+import { X, ChevronDown, Check, Plus } from 'lucide-react';
 
 export default function SearchableSelect({
     options,
@@ -8,7 +8,9 @@ export default function SearchableSelect({
     placeholder = "Selecione...",
     labelKey = "label",
     valueKey = "value",
-    disabled = false
+    disabled = false,
+    onAddNew = null,
+    addNewText = "Importar do CRM (+)"
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -50,7 +52,7 @@ export default function SearchableSelect({
     const handleSelect = (option) => {
         onChange(option[valueKey]);
         setIsOpen(false);
-        setSearch(''); // Optional: clear search on select? or keep? Keeping clear is usually better UX for single select.
+        setSearch('');
     };
 
     const handleClear = (e) => {
@@ -59,7 +61,7 @@ export default function SearchableSelect({
         setSearch('');
     };
 
-    const selectedOption = options.find(opt => opt[valueKey] == value); // Loose equality for string/int mix
+    const selectedOption = options.find(opt => opt[valueKey] == value);
 
     return (
         <div className="relative" ref={containerRef}>
@@ -75,6 +77,7 @@ export default function SearchableSelect({
                 <div className="flex items-center gap-1">
                     {value && !disabled && (
                         <button
+                            type="button"
                             onClick={handleClear}
                             className="p-1 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white"
                             title="Limpar"
@@ -88,7 +91,7 @@ export default function SearchableSelect({
 
             {isOpen && (
                 <div className="absolute z-[9999] w-full mt-1 bg-slate-800 border border-slate-700 rounded-md shadow-lg max-h-60 overflow-hidden flex flex-col">
-                    <div className="p-2 border-b border-slate-700">
+                    <div className="p-2 border-b border-slate-700 flex items-center gap-2">
                         <input
                             ref={inputRef}
                             type="text"
@@ -97,8 +100,22 @@ export default function SearchableSelect({
                             placeholder="Buscar..."
                             className="w-full bg-slate-900 text-white border border-slate-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500"
                             autoFocus
-                            onClick={(e) => e.stopPropagation()} // Prevent closing
+                            onClick={(e) => e.stopPropagation()}
                         />
+                        {onAddNew && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsOpen(false);
+                                    onAddNew(search);
+                                }}
+                                className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded flex items-center justify-center transition-colors shrink-0"
+                                title={addNewText}
+                            >
+                                <Plus size={16} />
+                            </button>
+                        )}
                     </div>
 
                     <div className="overflow-y-auto flex-1">
@@ -114,8 +131,22 @@ export default function SearchableSelect({
                                 </div>
                             ))
                         ) : (
-                            <div className="px-3 py-2 text-sm text-slate-500 text-center">
-                                Nenhum resultado encontrado
+                            <div className="px-3 py-3 text-sm text-slate-400 text-center flex flex-col items-center gap-2">
+                                <span>Nenhum resultado encontrado</span>
+                                {onAddNew && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsOpen(false);
+                                            onAddNew(search);
+                                        }}
+                                        className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors shadow-sm"
+                                    >
+                                        <Plus size={14} />
+                                        <span>{addNewText}</span>
+                                    </button>
+                                )}
                             </div>
                         )}
                         {options.length > filteredOptions.length && filteredOptions.length > 0 && (

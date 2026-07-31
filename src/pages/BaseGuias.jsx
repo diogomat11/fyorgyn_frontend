@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle } from 'lucide-react';
+import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldOff } from 'lucide-react';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import SearchableSelect from '../components/SearchableSelect';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -537,6 +537,7 @@ export default function BaseGuias() {
                                                 Saldo {sortConfig.key === 'saldo' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                             </th>
                                             <th className="px-6 py-3 text-left">Status Captura</th>
+                                            <th className="px-6 py-3 text-left">Validação</th>
                                         </>
                                     )}
                                 </tr>
@@ -602,13 +603,56 @@ export default function BaseGuias() {
                                                             <span className="text-xs text-slate-500">—</span>
                                                         )}
                                                     </td>
+                                                    <td className="px-6 py-4 text-sm whitespace-nowrap">
+                                                        {(() => {
+                                                            // valida_prestador pode vir como objeto completo {tipo_json, guias}
+                                                            // ou como dict simplificado por guia {Vinculo_prestador, codigo_procedimento}.
+                                                            const vp = g.valida_prestador;
+                                                            // Forma simplificada (uma guia = uma linha de base_guias)
+                                                            if (vp && typeof vp === 'object' && vp.Vinculo_prestador) {
+                                                                if (vp.Vinculo_prestador === 'Guia Válida') {
+                                                                    return (
+                                                                        <span className="text-emerald-400" title="Guia Válida">
+                                                                            <ShieldCheck size={18} />
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <span className="text-amber-400" title={vp.Vinculo_prestador}>
+                                                                        <ShieldAlert size={18} />
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            // Forma agregada {tipo_json, guias} - usa tipo_json como indicador
+                                                            if (vp && vp.tipo_json === 'All Sucess') {
+                                                                return (
+                                                                    <span className="text-emerald-400" title="Todas as guias válidas">
+                                                                        <ShieldCheck size={18} />
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            if (vp && vp.tipo_json === 'Thered') {
+                                                                return (
+                                                                    <span className="text-amber-400" title="Possui guias bloqueadas">
+                                                                        <ShieldAlert size={18} />
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            // Sem informacao de validacao
+                                                            return (
+                                                                <span className="text-red-400" title="Sem informação de validação">
+                                                                    <ShieldOff size={18} />
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                    </td>
                                                 </>
                                             )}
                                         </tr>
                                     );
                                 })}
                                 {sortedGuias.length === 0 && (
-                                    <tr><td colSpan="11" className="px-6 py-10 text-center text-text-secondary">Nenhuma guia encontrada.</td></tr>
+                                    <tr><td colSpan="12" className="px-6 py-10 text-center text-text-secondary">Nenhuma guia encontrada.</td></tr>
                                 )}
                             </tbody>
                         </table>
