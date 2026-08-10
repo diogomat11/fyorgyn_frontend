@@ -80,6 +80,11 @@ export default function Importacoes() {
   const [op4EvIdRelatorio, setOp4EvIdRelatorio] = useState('');
   const [op4EvNovaData, setOp4EvNovaData] = useState('');
 
+  // OP4 Unimed Goiânia parameters (Exames Finalizados)
+  const [op4GoiDataIni, setOp4GoiDataIni] = useState('');
+  const [op4GoiDataFim, setOp4GoiDataFim] = useState('');
+  const [op4GoiGuia, setOp4GoiGuia] = useState('');
+
   // Excel Batch Upload State (Bradesco Fature)
   const [excelFile, setExcelFile] = useState(null);
   const [excelDataInicio, setExcelDataInicio] = useState('');
@@ -186,7 +191,8 @@ export default function Importacoes() {
 
   const isStandalone = React.useMemo(() => {
     return (selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote'].includes(importRotina)) ||
-           (selectedConvenio === '100' && ['1', 'op1', 'op1_importPacientes', 'op5_ImportCorpoClinico', 'op6_baixarFaturados', 'op4_atualizarDataPTS', 'OP_consultaDocs', 'op7_consultaDocs', 'op7', '7'].includes(importRotina));
+           (selectedConvenio === '100' && ['1', 'op1', 'op1_importPacientes', 'op5_ImportCorpoClinico', 'op6_baixarFaturados', 'op4_atualizarDataPTS', 'OP_consultaDocs', 'op7_consultaDocs', 'op7', '7'].includes(importRotina)) ||
+           (selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(importRotina));
   }, [selectedConvenio, importRotina]);
 
   useEffect(() => {
@@ -416,6 +422,24 @@ export default function Importacoes() {
         finalParams = JSON.stringify({
           id_relatorio: op4EvIdRelatorio,
           data: novaDataFormatted
+        });
+      } else if (selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(finalRotina)) {
+        if (!op4GoiDataIni || !op4GoiDataFim) {
+          alert("Por favor, preencha as datas de Início e Fim.");
+          return;
+        }
+        let dtIniFormatted = op4GoiDataIni;
+        const pIni = op4GoiDataIni.split('-');
+        if (pIni.length === 3) dtIniFormatted = `${pIni[2]}/${pIni[1]}/${pIni[0]}`;
+
+        let dtFimFormatted = op4GoiDataFim;
+        const pFim = op4GoiDataFim.split('-');
+        if (pFim.length === 3) dtFimFormatted = `${pFim[2]}/${pFim[1]}/${pFim[0]}`;
+
+        finalParams = JSON.stringify({
+          data_ini: dtIniFormatted,
+          data_fim: dtFimFormatted,
+          guia: op4GoiGuia || ''
         });
       }
 
@@ -1017,6 +1041,41 @@ export default function Importacoes() {
                   type="date"
                   value={op4EvNovaData}
                   onChange={e => setOp4EvNovaData(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Prestador: <span className="font-mono font-bold">{currentConvenioObj?.codigo_referenciado || '2209525'}</span> (Unimed Goiânia – OP4 Exames Finalizados)
+                </div>
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Início *</label>
+                <Input
+                  type="date"
+                  value={op4GoiDataIni}
+                  onChange={e => setOp4GoiDataIni(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Fim *</label>
+                <Input
+                  type="date"
+                  value={op4GoiDataFim}
+                  onChange={e => setOp4GoiDataFim(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Nº Guia (Opcional)</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 70138883"
+                  value={op4GoiGuia}
+                  onChange={e => setOp4GoiGuia(e.target.value)}
                 />
               </div>
             </>
