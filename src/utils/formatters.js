@@ -99,6 +99,33 @@ export const validateCarteirinha = (value) => {
     return true;
 };
 
+export const validateCarteirinhaByConvenio = (value, convenio) => {
+    if (!value || typeof value !== 'string' || !value.trim()) return false;
+
+    // Se o convênio não tiver digitos_carteirinha definido ou for null, a regra de tamanho não se aplica
+    if (!convenio || convenio.digitos_carteirinha === null || convenio.digitos_carteirinha === undefined) {
+        return true;
+    }
+
+    const requiredDigits = Number(convenio.digitos_carteirinha);
+    if (!requiredDigits || isNaN(requiredDigits) || requiredDigits <= 0) {
+        return true;
+    }
+
+    const cleanValue = value.trim();
+
+    if (requiredDigits === 21) {
+        if (cleanValue.includes('.') || cleanValue.includes('-')) {
+            return validateCarteirinha(cleanValue);
+        }
+        const digitsOnly = cleanValue.replace(/\D/g, '');
+        return cleanValue.length === 21 || digitsOnly.length === 17 || digitsOnly.length === 21;
+    }
+
+    const digitsOnly = cleanValue.replace(/\D/g, '');
+    return digitsOnly.length === requiredDigits || cleanValue.length === requiredDigits;
+};
+
 export const maskCodigoBeneficiario = (value) => {
     if (!value) return '';
     // Keep only digits

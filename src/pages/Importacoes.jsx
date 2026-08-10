@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
 import { Play, Filter, RefreshCcw, Trash2, Clock, CheckCircle, AlertCircle, XCircle, Users, Activity, Upload, Download, FileSpreadsheet, ShieldCheck, ShieldAlert, ShieldOff } from 'lucide-react';
-import { formatDateTime, maskCarteirinha, validateCarteirinha } from '../utils/formatters';
+import { formatDateTime, maskCarteirinha, validateCarteirinha, validateCarteirinhaByConvenio, maskSulamerica, maskNumerics } from '../utils/formatters';
 import SearchableSelect from '../components/SearchableSelect';
 
 // Design System
@@ -428,8 +428,14 @@ export default function Importacoes() {
           return;
         }
 
-        if (!validateCarteirinha(cartInput)) {
-          alert("Carteirinha inválida! Formato deve ser 0000.0000.000000.00-0");
+        const selectedConvObj = convenios.find(c => c.id_convenio.toString() === selectedConvenio?.toString());
+        if (!validateCarteirinhaByConvenio(cartInput, selectedConvObj)) {
+          const digitos = selectedConvObj?.digitos_carteirinha;
+          if (digitos === 21) {
+            alert("Carteirinha inválida! Formato deve ser 0000.0000.000000.00-0");
+          } else {
+            alert(`Carteirinha inválida! Deve conter ${digitos} dígitos para o convênio ${selectedConvObj?.nome || ''}.`);
+          }
           return;
         }
 
@@ -591,7 +597,22 @@ export default function Importacoes() {
   };
 
   const handleTempCarteirinhaChange = (e) => {
-    e.target.value = maskCarteirinha(e.target.value);
+    if (!selectedConvenio || !convenios) return;
+    const selected = convenios.find(c => c.id_convenio.toString() === selectedConvenio.toString());
+    if (!selected) return;
+
+    const nome = (selected.nome || '').toLowerCase();
+    if (selected.digitos_carteirinha === null || selected.digitos_carteirinha === undefined) {
+      return;
+    }
+
+    if (selected.digitos_carteirinha === 21) {
+      e.target.value = maskCarteirinha(e.target.value);
+    } else if (nome.includes('sulamerica')) {
+      e.target.value = maskSulamerica(e.target.value);
+    } else {
+      e.target.value = maskNumerics(e.target.value, selected.digitos_carteirinha);
+    }
   };
 
   return (
@@ -1075,7 +1096,7 @@ export default function Importacoes() {
                   type="text"
                   placeholder="Ex: 0000.0000.000000.00-0"
                   id="temp-carteirinha"
-                  maxLength={21}
+                  maxLength={25}
                   onChange={handleTempCarteirinhaChange}
                 />
               </div>

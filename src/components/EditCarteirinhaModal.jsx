@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { X, Save } from 'lucide-react';
-import { maskCarteirinha, validateCarteirinha, maskCodigoBeneficiario, maskSulamerica, maskNumerics } from '../utils/formatters';
+import { maskCarteirinha, validateCarteirinha, validateCarteirinhaByConvenio, maskCodigoBeneficiario, maskSulamerica, maskNumerics } from '../utils/formatters';
 import Button from './ui/Button';
 import { Input, Select } from './ui/Input';
 import Card from './ui/Card';
@@ -28,13 +28,15 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
         const selected = convenios.find(c => c.id_convenio.toString() === id_convenio.toString());
         if (!selected) return value;
 
-        const nome = selected.nome.toLowerCase();
-        if (nome.includes('unimed')) {
+        const nome = (selected.nome || '').toLowerCase();
+        if (selected.digitos_carteirinha === null || selected.digitos_carteirinha === undefined) {
+            return value;
+        }
+
+        if (selected.digitos_carteirinha === 21) {
             return maskCarteirinha(value);
         } else if (nome.includes('sulamerica')) {
             return maskSulamerica(value);
-        } else if (nome.includes('amil') || nome.includes('ipasgo')) {
-            return maskNumerics(value, selected.digitos_carteirinha || 9);
         }
         return maskNumerics(value, selected.digitos_carteirinha);
     };
@@ -54,9 +56,15 @@ export default function EditCarteirinhaModal({ carteirinha, convenios, onClose, 
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const selectedConv = convenios?.find(c => c.id_convenio.toString() === carteirinha.id_convenio?.toString());
 
-        if (!validateCarteirinha(formData.carteirinha)) {
-            alert("Carteirinha inválida! Deve conter 21 caracteres");
+        if (!validateCarteirinhaByConvenio(formData.carteirinha, selectedConv)) {
+            const digitos = selectedConv?.digitos_carteirinha;
+            if (digitos === 21) {
+                alert("Carteirinha inválida! Deve conter 21 caracteres");
+            } else {
+                alert(`Carteirinha inválida! Deve conter ${digitos} dígitos para o convênio ${selectedConv?.nome || ''}.`);
+            }
             return;
         }
 

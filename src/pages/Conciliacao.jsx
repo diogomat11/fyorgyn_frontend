@@ -131,7 +131,11 @@ export default function Conciliacao() {
         setManualFatId(fatId); setShowManualModal(true); setLoadingCandidatos(true);
         setCandidatoDatas({});
         try {
-            const r = await api.get(`/conciliacao/candidatos/${fatId}`);
+            const params = new URLSearchParams();
+            if (selectedLoteConvenio) params.append('id_lote_convenio', selectedLoteConvenio);
+            if (selectedLoteAgendamento) params.append('id_lote_agendamento', selectedLoteAgendamento);
+            const queryStr = params.toString() ? `?${params.toString()}` : '';
+            const r = await api.get(`/conciliacao/candidatos/${fatId}${queryStr}`);
             setCandidatos(r.data.data);
             // Initialize editable dates from each candidate
             const initDatas = {};
@@ -158,9 +162,9 @@ export default function Conciliacao() {
             const agParam = item.id_agendamento ? `&id_agendamento=${item.id_agendamento}` : '';
             const r = await api.get(`/conciliacao/candidatos-fat-por-guia?numero_guia=${item.numero_guia}${loteParam}${agParam}`);
             setFatCandidatos(r.data.data);
-            // Initialize editable dates: prefer agendamento date, fallback to fat date
+            // Initialize editable dates: use candidate item date (dataRealizacao) first, fallback to agendamento date
             const initDatas = {};
-            r.data.data.forEach(f => { initDatas[f.id] = item.data || f.dataRealizacao || ''; });
+            r.data.data.forEach(f => { initDatas[f.id] = f.dataRealizacao || item.data || ''; });
             setFatCandidatoDatas(initDatas);
         } catch { alert("Erro ao buscar candidatos de faturamento"); }
         finally { setLoadingFatCandidatos(false); }
