@@ -1394,16 +1394,22 @@ export default function Importacoes() {
                           <FileSpreadsheet size={14} /> Baixar Excel
                         </a>
                       )}
-                      {(job.status === 'error' && job.attempts > 3) && (
-                        <>
-                          <Button size="sm" variant="ghost" onClick={() => handleRetryJob(job.id)} title="Reenviar" className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/10">
-                            <RefreshCcw size={16} />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDeleteJob(job.id)} title="Excluir" className="text-red-500 hover:text-red-400 hover:bg-red-500/10">
-                            <Trash2 size={16} />
-                          </Button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRetryJob(job.id)}
+                        title="Reprocessar Job"
+                        className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                      >
+                        <RefreshCcw size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteJob(job.id)}
+                        title="Excluir Job"
+                        className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
                   </td>
                 </tr>

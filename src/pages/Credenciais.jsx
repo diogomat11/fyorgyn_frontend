@@ -37,14 +37,28 @@ export default function Credenciais() {
         setLoading(true);
         setError('');
         try {
-            const [credRes, userRes, convRes] = await Promise.all([
+            const currentUid = parseInt(localStorage.getItem('user_id') || '0');
+            const currentUsername = localStorage.getItem('username') || 'Sua Clínica';
+
+            const [credRes, convRes] = await Promise.all([
                 api.get('/convenios/credentials'),
-                api.get('/auth/admin/users'),
-                api.get('/convenios/')
+                api.get('/convenios/').catch(() => api.get('/convenios/all')).catch(() => ({ data: [] }))
             ]);
-            setCredentials(credRes.data);
-            setUsers(userRes.data);
-            setConvenios(convRes.data);
+
+            setCredentials(credRes.data || []);
+            setConvenios(convRes.data || []);
+
+            // Try to load admin users, fallback to current user for Gestors
+            try {
+                const uRes = await api.get('/auth/admin/users');
+                if (uRes.data && uRes.data.length > 0) {
+                    setUsers(uRes.data);
+                } else {
+                    setUsers([{ id: currentUid, username: currentUsername }]);
+                }
+            } catch {
+                setUsers([{ id: currentUid, username: currentUsername }]);
+            }
         } catch (err) {
             setError('Erro ao carregar dados: ' + (err.response?.data?.detail || err.message));
         } finally {
@@ -53,10 +67,11 @@ export default function Credenciais() {
     };
 
     const handleOpenCreate = () => {
+        const currentUid = parseInt(localStorage.getItem('user_id') || '0');
         setModalMode('create');
         setSelectedId(null);
         setForm({
-            user_id: users[0]?.id || '',
+            user_id: users[0]?.id || currentUid,
             id_convenio: convenios[0]?.id_convenio || '',
             login: '',
             senha: '',
@@ -94,10 +109,17 @@ export default function Credenciais() {
         setError('');
         try {
             if (modalMode === 'create') {
+                const uid = parseInt(form.user_id);
+                const cid = parseInt(form.id_convenio);
+                if (isNaN(uid) || isNaN(cid)) {
+                    setError('Selecione um usuário e convênio válidos.');
+                    setSaving(false);
+                    return;
+                }
                 await api.post('/convenios/credentials', {
                     ...form,
-                    user_id: parseInt(form.user_id),
-                    id_convenio: parseInt(form.id_convenio)
+                    user_id: uid,
+                    id_convenio: cid
                 });
             } else {
                 await api.put(`/convenios/credentials/${selectedId}`, {
@@ -144,8 +166,9 @@ export default function Credenciais() {
                     </div>
                 </div>
                 <button
+                    type="button"
                     onClick={handleOpenCreate}
-                    disabled={loading || users.length === 0 || convenios.length === 0}
+                    disabled={loading || convenios.length === 0}
                     className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50"
                 >
                     <Plus size={16} /> Nova Credencial
@@ -159,7 +182,7 @@ export default function Credenciais() {
                         <ShieldAlert size={16} />
                         <span>{error}</span>
                     </div>
-                    <button onClick={() => setError('')} className="text-red-400 hover:text-white">
+                    <button type="button" onClick={() => setError('')} className="text-red-400 hover:text-white">
                         <X size={16} />
                     </button>
                 </div>
@@ -252,7 +275,7 @@ export default function Credenciais() {
                             <h3 className="text-lg font-semibold text-slate-100">
                                 {modalMode === 'create' ? 'Configurar Novas Credenciais' : 'Editar Credenciais'}
                             </h3>
-                            <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white">
+                            <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white">
                                 <X size={20} />
                             </button>
                         </div>

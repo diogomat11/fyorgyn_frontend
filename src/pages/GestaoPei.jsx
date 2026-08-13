@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { listPei, overridePei, getPeiStats, exportPei } from '../services/pei';
-import { Edit2, Save, Filter, X, Download, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Edit2, Save, Filter, X, Download, AlertCircle, CheckCircle, Clock, Info } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
 // Design System
@@ -44,6 +44,149 @@ function StatCard({ title, count, color, icon: Icon, onClick }) {
     );
 }
 
+function PeiProgressPopover({ item }) {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    // Calcula os dias restantes ate o vencimento
+    const hoje = new Date();
+    // zerar a hora do dia de hoje para evitar falhas de timezone
+    hoje.setHours(0,0,0,0);
+    
+    const vencimento = item.validade ? new Date(item.validade) : null;
+    if (vencimento) vencimento.setHours(0,0,0,0);
+
+    let diasRestantes = null;
+    if (vencimento) {
+        const diffTime = vencimento.getTime() - hoje.getTime();
+        diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+    
+    // Cor do icone
+    let iconColor = 'text-slate-400';
+    if (diasRestantes !== null) {
+        if (diasRestantes > 60) iconColor = 'text-emerald-500';
+        else if (diasRestantes >= 30) iconColor = 'text-amber-500';
+        else if (diasRestantes >= 0) iconColor = 'text-orange-500';
+        else iconColor = 'text-red-500';
+    }
+
+    const renderContent = () => {
+        // Barra 1: Tempo do PEI
+        const dtAuth = item.data_autorizacao ? new Date(item.data_autorizacao) : null;
+        if (dtAuth) dtAuth.setHours(0,0,0,0);
+        let percentTempo = 0;
+        let diffTotalTempo = 1;
+        if (dtAuth && vencimento) {
+            diffTotalTempo = (vencimento.getTime() - dtAuth.getTime()) / (1000 * 60 * 60 * 24);
+            const decorrido = (hoje.getTime() - dtAuth.getTime()) / (1000 * 60 * 60 * 24);
+            percentTempo = diffTotalTempo > 0 ? Math.max(0, Math.min(100, (decorrido / diffTotalTempo) * 100)) : 0;
+        }
+        
+        // Posicao dos marcadores de tempo
+        const pos60 = diffTotalTempo > 0 ? Math.max(0, ((diffTotalTempo - 60) / diffTotalTempo) * 100) : 0;
+        const pos30 = diffTotalTempo > 0 ? Math.max(0, ((diffTotalTempo - 30) / diffTotalTempo) * 100) : 0;
+
+        // Barra 2: Consumo da Guia
+        const qtdSolicitada = item.qtde_solicitada || 0;
+        const qtdAutorizada = item.sessoes_autorizadas || 0;
+        const consumido = Math.max(0, qtdSolicitada - qtdAutorizada);
+        const percentConsumo = qtdSolicitada > 0 ? Math.min(100, (consumido / qtdSolicitada) * 100) : 0;
+        
+        const peiSemanal = item.pei_semanal || 1;
+        const semanasRestantes = qtdAutorizada / peiSemanal;
+        
+        let barColor = 'bg-slate-400';
+        if (semanasRestantes > 8) barColor = 'bg-emerald-500';
+        else if (semanasRestantes >= 4) barColor = 'bg-amber-500';
+        else if (semanasRestantes >= 2) barColor = 'bg-orange-500';
+        else barColor = 'bg-red-500';
+
+        const pos4x = qtdSolicitada > 0 ? Math.max(0, ((qtdSolicitada - (4 * peiSemanal)) / qtdSolicitada) * 100) : 0;
+        const pos8x = qtdSolicitada > 0 ? Math.max(0, ((qtdSolicitada - (8 * peiSemanal)) / qtdSolicitada) * 100) : 0;
+
+        // Formatar datas para exibicao sem fuso horario causando mudanca de dia
+        const fmtDate = (d) => {
+            if (!d) return '-';
+            const y = d.getUTCFullYear();
+            const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            return `${day}/${m}/${y}`;
+        };
+
+        return (
+            <div className="fixed z-[9999] mt-2 w-80 bg-slate-900 border border-slate-700 shadow-2xl rounded-xl p-4 animate-in slide-in-from-bottom-2 fade-in duration-200" style={{ transform: 'translateX(-50%)' }}>
+                <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-semibold text-white">Progresso do PEI</h4>
+                    <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white"><X size={16}/></button>
+                </div>
+                
+                {/* Tempo */}
+                <div className="mb-4 bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+                    <div className="flex justify-between text-[11px] text-slate-300 mb-1 font-medium">
+                        <span>Aut: {fmtDate(dtAuth)}</span>
+                        <span>Venc: {fmtDate(vencimento)}</span>
+                    </div>
+                    <div className="relative h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-600/50">
+                        <div className="absolute top-0 left-0 h-full bg-blue-500/80 transition-all duration-500" style={{ width: `${percentTempo}%` }}></div>
+                        {diffTotalTempo > 60 && <div className="absolute top-0 bottom-0 w-[2px] bg-emerald-400/80 z-10" style={{ left: `${pos60}%` }} title="60 dias"></div>}
+                        {diffTotalTempo > 30 && <div className="absolute top-0 bottom-0 w-[2px] bg-amber-400/80 z-10" style={{ left: `${pos30}%` }} title="30 dias"></div>}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1.5 flex justify-between">
+                        <span className="flex items-center gap-2">
+                           <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span> 60d
+                           <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> 30d
+                        </span>
+                        <span className="font-semibold text-slate-300">
+                            {diasRestantes > 0 ? `Faltam ${diasRestantes} dias` : 'Vencido'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Consumo */}
+                <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+                    <div className="flex justify-between text-[11px] text-slate-300 mb-1 font-medium">
+                        <span>Consumo: {consumido} / {qtdSolicitada}</span>
+                        <span>Restante: {qtdAutorizada} ({(semanasRestantes).toFixed(1)} sem)</span>
+                    </div>
+                    <div className="relative h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-600/50">
+                        <div className={`absolute top-0 left-0 h-full ${barColor} transition-all duration-500 shadow-[0_0_8px_rgba(0,0,0,0.5)]`} style={{ width: `${percentConsumo}%` }}></div>
+                        {qtdSolicitada > 0 && pos8x > 0 && <div className="absolute top-0 bottom-0 w-[2px] bg-white/70 z-10" style={{ left: `${pos8x}%` }} title="8 semanas rest."></div>}
+                        {qtdSolicitada > 0 && pos4x > 0 && <div className="absolute top-0 bottom-0 w-[2px] bg-white/70 z-10" style={{ left: `${pos4x}%` }} title="4 semanas rest."></div>}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1.5 flex justify-between">
+                        <span className="flex items-center gap-2">
+                           <span className="w-[2px] h-2 bg-white/70 inline-block"></span> Marcos: 8x e 4x PEI
+                        </span>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="relative inline-flex items-center gap-2">
+            <span>
+                {item.validade ? (() => {
+                    const d = new Date(item.validade);
+                    const y = d.getUTCFullYear();
+                    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(d.getUTCDate()).padStart(2, '0');
+                    return `${day}/${m}/${y}`;
+                })() : '-'}
+            </span>
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+                className={`p-1 rounded-full hover:bg-slate-800 transition-colors ${iconColor} hover:scale-110`}
+                title="Ver progresso"
+            >
+                <Info size={16} strokeWidth={2.5} />
+            </button>
+            {isOpen && renderContent()}
+        </div>
+    );
+}
+
 export default function GestaoPei() {
     const [data, setData] = useState([]);
     const [stats, setStats] = useState({ total: 0, vencidos: 0, vence_d7: 0, vence_d30: 0 });
@@ -66,14 +209,10 @@ export default function GestaoPei() {
     useEffect(() => {
         const fetchConvenios = async () => {
             try {
-                // Must import api inside if not available, wait, we don't have api here? Let's import it or use a service.
-                // Actually pei.js doesn't export api. Let's just import api from '../services/api';
                 const { default: api } = await import('../services/api');
                 const res = await api.get('/convenios/');
                 setConvenios(res.data);
-                if (res.data.length > 0) {
-                    setFilters(f => ({ ...f, id_convenio: res.data[0].id_convenio.toString() }));
-                }
+                // Removed the default filter assignment so it starts with "Todos os Convênios"
             } catch (e) { console.error("Error fetching convenios", e); }
         };
         fetchConvenios();
@@ -252,8 +391,8 @@ export default function GestaoPei() {
                                             />
                                         ) : item.pei_semanal}
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
-                                        {item.validade ? new Date(item.validade).toLocaleDateString() : '-'}
+                                    <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap overflow-visible">
+                                        <PeiProgressPopover item={item} />
                                     </td>
                                     <td className="px-6 py-4 text-sm">
                                         <Badge variant={item.status === 'Validado' ? 'success' : 'warning'}>

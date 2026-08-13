@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield, RefreshCw } from 'lucide-react';
+import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield, RefreshCw, Printer } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
 // Design System components matching the app's aesthetic
@@ -94,14 +94,20 @@ export default function Agendamentos() {
     // Filters
     const [convenios, setConvenios] = useState([]);
     const [procedimentos, setProcedimentos] = useState([]);
+    const [unidades, setUnidades] = useState([]);
     const [filters, setFilters] = useState({
         paciente: '',
         id_convenio: '',
+        id_unidade: '',
         data_inicio: '',
         data_fim: '',
         status: '',
         procedimento: ''
     });
+
+    useEffect(() => {
+        api.get('/unidades/').then(res => setUnidades(res.data)).catch(console.error);
+    }, []);
 
     useEffect(() => {
         const params = new URLSearchParams();
@@ -111,6 +117,39 @@ export default function Agendamentos() {
             .then(res => setConvenios(res.data))
             .catch(console.error);
     }, [filters.data_inicio, filters.data_fim]);
+
+    const handleGerarComprovante = async () => {
+        if (!selectedIds.length) {
+            alert("Selecione ao menos um agendamento para gerar o comprovante.");
+            return;
+        }
+        try {
+            const response = await api.post('/comprovante/gerar', { agendamento_ids: selectedIds }, { responseType: 'blob' });
+            const isZip = response.headers['content-type']?.includes('zip');
+            const fileName = isZip ? 'comprovantes_unimed.zip' : 'comprovante_unimed.pdf';
+            
+            const blob = new Blob([response.data], { type: response.headers['content-type'] });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (err) {
+            alert("Erro ao gerar comprovante: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleImprimirIpasgo = async (id) => {
+        try {
+            const res = await api.post('/agendamentos/imprimir-ipasgo', { agendamento_id: id });
+            alert(res.data.message || "Job OP12 de impressão IPASGO enfileirado!");
+            loadData();
+        } catch (err) {
+            alert("Erro ao solicitar impressão IPASGO: " + (err.response?.data?.detail || err.message));
+        }
+    };
 
     const exportToXLSX = () => {
         if (!agendamentos.length) {
@@ -442,15 +481,19 @@ export default function Agendamentos() {
                         <X className="w-4 h-4 mr-2" /> Limpar
                     </Button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-3">
                     <Input placeholder="Buscar Paciente..." icon={<Search className="w-4 h-4" />} value={filters.paciente} onChange={(e) => handleFilterChange('paciente', e.target.value)} />
                     <Select value={filters.id_convenio} onChange={(e) => handleFilterChange('id_convenio', e.target.value)}>
                         <option value="">Todos os Convênios</option>
                         {convenios.map(c => <option key={c.id_convenio} value={c.id_convenio}>{c.nome}</option>)}
                     </Select>
+                    <Select value={filters.id_unidade} onChange={(e) => handleFilterChange('id_unidade', e.target.value)}>
+                        <option value="">Todas Unidades</option>
+                        {unidades.map(u => <option key={u.id_unidade} value={u.id_unidade}>{u.nome || `Unidade #${u.id_unidade}`}</option>)}
+                    </Select>
                     <Select value={filters.procedimento} onChange={(e) => handleFilterChange('procedimento', e.target.value)} disabled={!filters.id_convenio}>
                         <option value="">Todos Procedimentos</option>
-                        {procedimentos.map((p, i) => <option key={i} value={p}>{p}</option>)}
+                        {procedimentos.map((p, i) => <option key={i} value={p.faturamento || p.nome || p}>{p.nome || p}</option>)}
                     </Select>
                     <Select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
                         <option value="">Status...</option>
@@ -473,16 +516,21 @@ export default function Agendamentos() {
                     </span>
                     <div className="flex gap-2">
                         <Button variant="outline" size="sm" className="bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 border-emerald-500/50" onClick={() => handleBatchAction('confirmar')}>
-                            <CheckCircle className="w-4 h-4 mr-2" /> Confirmar
+                            <CheckCircle className="w-4 h-4 mr-1.5" /> Confirmar
                         </Button>
                         <Button variant="outline" size="sm" className="bg-red-600/20 text-red-400 hover:bg-red-600/40 border-red-500/50" onClick={() => handleBatchAction('falta')}>
-                            <XCircle className="w-4 h-4 mr-2" /> Falta
+                            <XCircle className="w-4 h-4 mr-1.5" /> Falta
                         </Button>
                         <Button variant="outline" size="sm" className="bg-primary hover:bg-primary-hover text-white border-transparent" onClick={() => handleBatchAction('faturar')}>
-                            <Play className="w-4 h-4 mr-2" /> Faturar OP=3
+                            <Play className="w-4 h-4 mr-1.5" /> Faturar OP=3
                         </Button>
+                        {(filters.id_convenio === '3' || filters.id_convenio === '21' || !filters.id_convenio) && (
+                            <Button variant="outline" size="sm" className="bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 border-cyan-500/50" onClick={handleGerarComprovante}>
+                                <Download className="w-4 h-4 mr-1.5" /> Imprimir Comprovante (Unimed)
+                            </Button>
+                        )}
                         <Button variant="outline" size="sm" className="hover:bg-red-900/40 text-red-400 border-red-500/30" onClick={() => handleBatchAction('excluir')}>
-                            <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                            <Trash2 className="w-4 h-4 mr-1.5" /> Excluir
                         </Button>
                     </div>
                 </div>
@@ -498,9 +546,10 @@ export default function Agendamentos() {
                                     <input type="checkbox" className="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary focus:ring-offset-slate-900" checked={agendamentos.length > 0 && selectedIds.length === agendamentos.length} onChange={handleSelectAll} />
                                 </th>
                                 <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Paciente</th>
-                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Data</th>
-                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Hora</th>
+                                <th className="px-1 py-2 font-medium uppercase tracking-wider text-[10px] w-20">Data/Hora</th>
                                 <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Profissional</th>
+                                <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Convênio</th>
+                                <th className="px-1.5 py-2 font-medium uppercase tracking-wider text-[10px]">Unidade</th>
                                 <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">Guia</th>
                                 <th className="px-2 py-2 font-medium uppercase tracking-wider text-[10px]">
                                     <div>Status Captura</div>
@@ -524,13 +573,23 @@ export default function Agendamentos() {
                                         <input type="checkbox" className="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary focus:ring-offset-slate-900" checked={selectedIds.includes(agenda.id_agendamento)} onChange={() => toggleSelect(agenda.id_agendamento)} />
                                     </td>
                                     <td className="px-2 py-1.5">
-                                        <div className="font-medium text-slate-200 text-xs truncate max-w-[140px]" title={agenda.Nome_Paciente}>{agenda.Nome_Paciente}</div>
+                                        <div className="font-medium text-slate-100 text-xs min-w-[180px] max-w-[280px] truncate" title={agenda.Nome_Paciente}>{agenda.Nome_Paciente}</div>
+                                        <div className="text-[10px] text-slate-500 font-mono">{agenda.carteirinha}</div>
                                     </td>
-                                    <td className="px-2 py-1.5 text-slate-300 text-xs">{formatDate(agenda.data)}</td>
-                                    <td className="px-2 py-1.5 text-slate-300 text-xs">{agenda.hora_inicio ? agenda.hora_inicio.substring(0, 5) : '-'}</td>
+                                    <td className="px-1 py-1.5 text-slate-300 text-[11px] whitespace-nowrap">
+                                        <div>{formatDate(agenda.data)}</div>
+                                        <div className="text-[10px] text-slate-500">{agenda.hora_inicio ? agenda.hora_inicio.substring(0, 5) : '-'}</div>
+                                    </td>
                                     <td className="px-2 py-1.5">
-                                        <div className="text-slate-300 text-xs truncate max-w-[120px]" title={agenda.Nome_profissional}>{agenda.Nome_profissional}</div>
-                                        <div className="text-[10px] text-slate-500">{agenda.nome_convenio}</div>
+                                        <div className="text-slate-300 text-xs min-w-[140px] max-w-[220px] truncate" title={agenda.Nome_profissional}>{agenda.Nome_profissional}</div>
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                                            {agenda.nome_convenio || '—'}
+                                        </span>
+                                    </td>
+                                    <td className="px-1.5 py-1.5 text-slate-300 text-[11px] font-medium">
+                                        {agenda.nome_unidade || (agenda.id_unidade ? `Unid. #${agenda.id_unidade}` : '-')}
                                     </td>
                                     <td className="px-2 py-1.5">
                                         {agenda.numero_guia ? (
@@ -604,6 +663,15 @@ export default function Agendamentos() {
                                                     className="p-1 rounded hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 disabled:opacity-30 disabled:pointer-events-none transition-colors"
                                                 >
                                                     <Play size={14} />
+                                                </button>
+                                            )}
+                                            {(agenda.id_convenio == 6 || agenda.id_convenio == 31) && (
+                                                <button
+                                                    title="Imprimir Guia IPASGO (OP12)"
+                                                    onClick={() => handleImprimirIpasgo(agenda.id_agendamento)}
+                                                    className="p-1 rounded hover:bg-cyan-500/10 text-cyan-400 hover:text-cyan-300 transition-colors"
+                                                >
+                                                    <Printer size={14} />
                                                 </button>
                                             )}
                                             <button

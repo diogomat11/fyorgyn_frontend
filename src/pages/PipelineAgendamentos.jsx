@@ -214,6 +214,21 @@ export default function PipelineAgendamentos() {
     };
 
     // Actions
+    const handleTriggerWorkflow = async (ids = selectedIds) => {
+        if (ids.length === 0) return;
+        setProcessingIds(prev => [...new Set([...prev, ...ids])]);
+        try {
+            const res = await api.post('/workflow/trigger', { agendamento_ids: ids });
+            alert(res.data.message || "Workflow acionado com sucesso!");
+            setSelectedIds([]);
+            loadData();
+        } catch (err) {
+            alert(err.response?.data?.detail || "Erro ao acionar workflow.");
+        } finally {
+            setProcessingIds(prev => prev.filter(x => !ids.includes(x)));
+        }
+    };
+
     const handleConfirmarPortal = async (ids = selectedIds, remover = false) => {
         if (ids.length === 0) return;
         setProcessingIds(prev => [...new Set([...prev, ...ids])]);
@@ -498,6 +513,13 @@ export default function PipelineAgendamentos() {
 
                         {activeTab === 'a_confirmar' && (
                             <>
+                                <Button 
+                                    size="sm" 
+                                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold" 
+                                    onClick={() => handleTriggerWorkflow(selectedIds)}
+                                >
+                                    <Play className="w-4 h-4 mr-1.5" /> Acionar Workflow Inteligente
+                                </Button>
                                 <Button 
                                     size="sm" 
                                     className="bg-emerald-600 hover:bg-emerald-700 text-white" 

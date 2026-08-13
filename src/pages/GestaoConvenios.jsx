@@ -116,20 +116,23 @@ export default function GestaoConvenios() {
         setLoading(true);
         setError('');
         try {
+            const currentUid = parseInt(localStorage.getItem('user_id') || '0');
+            const currentUsername = localStorage.getItem('username') || 'Sua Clínica';
+
             const [assignRes, wfRes, userRes, convRes, workerRes, opsRes] = await Promise.all([
-                api.get('/convenios/user-assignments'),
-                api.get('/workflows/'),
-                api.get('/auth/admin/users'),
-                api.get('/convenios/all'),
-                api.get('/convenios/worker-convenios'),
-                api.get('/convenios/worker-operacoes')
+                api.get('/convenios/user-assignments').catch(() => ({ data: [] })),
+                api.get('/workflows/').catch(() => ({ data: [] })),
+                api.get('/auth/admin/users').catch(() => api.get('/auth/users')).catch(() => ({ data: [{ id: currentUid, username: currentUsername }] })),
+                api.get('/convenios/all').catch(() => api.get('/convenios/')).catch(() => ({ data: [] })),
+                api.get('/convenios/worker-convenios').catch(() => ({ data: [] })),
+                api.get('/convenios/worker-operacoes').catch(() => ({ data: [] }))
             ]);
-            setAssignments(assignRes.data);
-            setWorkflows(wfRes.data);
-            setUsers(userRes.data);
-            setConvenios(convRes.data);
-            setWorkerConvenios(workerRes.data);
-            setOperacoes(opsRes.data);
+            setAssignments(assignRes.data || []);
+            setWorkflows(wfRes.data || []);
+            setUsers(userRes.data || []);
+            setConvenios(convRes.data || []);
+            setWorkerConvenios(workerRes.data || []);
+            setOperacoes(opsRes.data || []);
         } catch (err) {
             setError('Erro ao carregar dados: ' + (err.response?.data?.detail || err.message));
         } finally {
@@ -822,6 +825,7 @@ export default function GestaoConvenios() {
                                                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-indigo-300 font-mono focus:outline-none focus:border-indigo-500"
                                                 >
                                                     <option value="none">Nenhuma (Apenas Transição de Etapa no Hub)</option>
+                                                    <option value="imprimir">imprimir — Imprimir Ficha / Comprovante Unimed (PDF)</option>
                                                     {availableOperacoes.map(op => (
                                                         <option key={op.id} value={op.rotina}>
                                                             {op.rotina} — {op.descricao || op.rotina}

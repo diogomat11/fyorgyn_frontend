@@ -17,10 +17,13 @@ import GestaoTerapias from './pages/GestaoTerapias';
 import MainLayout from './layouts/MainLayout';
 import Credenciais from './pages/Credenciais';
 import Usuarios from './pages/Usuarios';
+import GestaoUsuarios from './pages/GestaoUsuarios';
 import CorpoClinico from './pages/CorpoClinico';
 import GestaoConvenios from './pages/GestaoConvenios';
+import GestaoIntegradores from './pages/GestaoIntegradores';
 import PipelineAgendamentos from './pages/PipelineAgendamentos';
 import AgendaFixa from './pages/AgendaFixa';
+import GestaoUnidades from './pages/GestaoUnidades';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -64,6 +67,12 @@ export default function App() {
           </PrivateRoute>
         } />
 
+        <Route path="/unidades" element={
+          <PrivateRoute>
+            <GestaoUnidades />
+          </PrivateRoute>
+        } />
+
         <Route path="/pei" element={
           <PrivateRoute>
             <GestaoPei />
@@ -101,26 +110,40 @@ export default function App() {
         } />
 
         <Route path="/prioridades" element={
-          <AdminRoute>
+          <PrivateRoute>
             <Prioridades />
-          </AdminRoute>
+          </PrivateRoute>
         } />
 
         <Route path="/credenciais" element={
-          <AdminRoute>
+          <PrivateRoute>
             <Credenciais />
-          </AdminRoute>
+          </PrivateRoute>
         } />
 
-        <Route path="/usuarios" element={
+        <Route path="/clientes" element={
           <AdminRoute>
             <Usuarios />
           </AdminRoute>
         } />
 
+        <Route path="/usuarios" element={<Navigate to="/clientes" replace />} />
+
+        <Route path="/gestao-usuarios" element={
+          <PrivateRoute>
+            <GestaoUsuarios />
+          </PrivateRoute>
+        } />
+
         <Route path="/gestao-convenios" element={
           <AdminRoute>
             <GestaoConvenios />
+          </AdminRoute>
+        } />
+
+        <Route path="/gestao-integradores" element={
+          <AdminRoute>
+            <GestaoIntegradores />
           </AdminRoute>
         } />
 
