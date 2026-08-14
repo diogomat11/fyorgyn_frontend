@@ -39,11 +39,10 @@ export default function GestaoConvenios() {
 
     const [activeTab, setActiveTab] = useState('mapeamento_integrador');
 
-    // State for New Convênio Modal
+    // State for Nova Relação Convênio x Integrador Modal
     const [showNewConvModal, setShowNewConvModal] = useState(false);
     const [newConvForm, setNewConvForm] = useState({
-        nome: '',
-        digitos_carteirinha: 21,
+        id_convenio: '',
         id_integrador: '',
         operacoes_habilitadas: []
     });
@@ -212,27 +211,43 @@ export default function GestaoConvenios() {
         }
     };
 
-    const handleCreateConvenio = async (e) => {
+    const handleCreateRelacao = async (e) => {
         e.preventDefault();
-        if (!newConvForm.nome.trim()) {
-            alert('Por favor informe o nome do convênio.');
+        if (!newConvForm.id_convenio || !newConvForm.id_integrador) {
+            alert('Por favor selecione o convênio e o integrador.');
             return;
         }
         setSaving(true);
         try {
-            await api.post('/convenios/', {
-                nome: newConvForm.nome.trim(),
-                digitos_carteirinha: newConvForm.digitos_carteirinha ? parseInt(newConvForm.digitos_carteirinha) : null,
-                id_integrador: newConvForm.id_integrador ? parseInt(newConvForm.id_integrador) : null,
+            await api.put(`/convenios/${newConvForm.id_convenio}/integrador-mapping`, {
+                id_integrador: parseInt(newConvForm.id_integrador),
                 operacoes_habilitadas: newConvForm.operacoes_habilitadas || []
             });
             setShowNewConvModal(false);
-            setNewConvForm({ nome: '', digitos_carteirinha: 21, id_integrador: '', operacoes_habilitadas: [] });
+            setNewConvForm({ id_convenio: '', id_integrador: '', operacoes_habilitadas: [] });
             loadData();
-            setSuccessMsg('Novo convênio cadastrado com sucesso!');
+            setSuccessMsg('Relação Convênio x Integrador vinculada com sucesso!');
             setTimeout(() => setSuccessMsg(''), 4000);
         } catch (err) {
-            alert('Erro ao cadastrar convênio: ' + (err.response?.data?.detail || err.message));
+            alert('Erro ao salvar relação: ' + (err.response?.data?.detail || err.message));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUnlinkRelacao = async (conv) => {
+        if (!window.confirm(`Deseja realmente desvincular o convênio "${conv.nome}" do integrador?`)) return;
+        setSaving(true);
+        try {
+            await api.put(`/convenios/${conv.id_convenio}/integrador-mapping`, {
+                id_integrador: null,
+                operacoes_habilitadas: []
+            });
+            loadData();
+            setSuccessMsg(`Convênio "${conv.nome}" desvinculado com sucesso!`);
+            setTimeout(() => setSuccessMsg(''), 4000);
+        } catch (err) {
+            alert('Erro ao desvincular relação: ' + (err.response?.data?.detail || err.message));
         } finally {
             setSaving(false);
         }
@@ -418,7 +433,8 @@ export default function GestaoConvenios() {
 
     const selectedNodeObj = wfForm.fluxo_passos.find(n => n.id === selectedNodeId);
 
-    const filteredConvenios = (mappingData.convenios || []).filter(c => 
+    const linkedConvenios = (mappingData.convenios || []).filter(c => c.id_integrador !== null);
+    const filteredConvenios = linkedConvenios.filter(c => 
         c.nome?.toLowerCase().includes(searchConv.toLowerCase()) ||
         String(c.id_convenio).includes(searchConv) ||
         (c.nome_integrador && c.nome_integrador.toLowerCase().includes(searchConv.toLowerCase()))
@@ -439,9 +455,15 @@ export default function GestaoConvenios() {
                 </div>
                 <div className="flex items-center gap-3">
                     {activeTab === 'mapeamento_integrador' && (
-                        <Button onClick={() => setShowNewConvModal(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20">
+                        <Button 
+                            onClick={() => {
+                                setNewConvForm({ id_convenio: '', id_integrador: '', operacoes_habilitadas: [] });
+                                setShowNewConvModal(true);
+                            }} 
+                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20"
+                        >
                             <Plus className="w-5 h-5" />
-                            Novo Convênio
+                            Nova Relação
                         </Button>
                     )}
                     {activeTab === 'workflows_custom' && (
@@ -463,7 +485,7 @@ export default function GestaoConvenios() {
                             : 'text-slate-400 hover:text-slate-200'
                     }`}
                 >
-                    <Layers className="w-4 h-4" /> Convênio x Integrador & Operações ({mappingData.convenios?.length || 0})
+                    <Layers className="w-4 h-4" /> Convênio x Integrador ({linkedConvenios.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('atribuicoes')}
@@ -524,7 +546,7 @@ export default function GestaoConvenios() {
                             className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 w-full max-w-md focus:outline-none focus:border-indigo-500"
                         />
                         <span className="text-xs text-slate-400 whitespace-nowrap">
-                            Mostrando <strong className="text-slate-200">{filteredConvenios.length}</strong> convênios
+                            Mostrando <strong className="text-slate-200">{filteredConvenios.length}</strong> relações vinculadas
                         </span>
                     </div>
 
@@ -534,7 +556,19 @@ export default function GestaoConvenios() {
                             <span>Carregando mapeamentos de convênios...</span>
                         </div>
                     ) : filteredConvenios.length === 0 ? (
-                        <Card className="p-8 text-center text-slate-500">Nenhum convênio encontrado.</Card>
+                        <Card className="p-8 text-center text-slate-500 space-y-3">
+                            <p>Nenhum convênio vinculado a integrador encontrado.</p>
+                            <Button 
+                                size="sm" 
+                                onClick={() => {
+                                    setNewConvForm({ id_convenio: '', id_integrador: '', operacoes_habilitadas: [] });
+                                    setShowNewConvModal(true);
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-xs"
+                            >
+                                <Plus size={14} className="mr-1" /> Criar Primeira Relação
+                            </Button>
+                        </Card>
                     ) : (
                         <div className="grid grid-cols-1 gap-4">
                             {filteredConvenios.map(conv => (
@@ -547,7 +581,7 @@ export default function GestaoConvenios() {
                                             <h3 className="font-bold text-lg text-white">{conv.nome}</h3>
                                         </div>
 
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-3 flex-wrap">
                                             <label className="text-xs font-semibold text-slate-400 whitespace-nowrap">Integrador Worker:</label>
                                             <select
                                                 value={conv.id_integrador || ''}
@@ -570,6 +604,17 @@ export default function GestaoConvenios() {
                                                 className="text-xs py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 flex items-center gap-1"
                                             >
                                                 <Check size={14} /> Salvar
+                                            </Button>
+
+                                            <Button
+                                                size="sm"
+                                                variant="danger"
+                                                onClick={() => handleUnlinkRelacao(conv)}
+                                                disabled={saving}
+                                                className="text-xs py-1.5 px-2.5 text-red-400 hover:text-red-300 border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 flex items-center gap-1"
+                                                title="Desvincular integrador deste convênio"
+                                            >
+                                                <Trash2 size={13} /> Desvincular
                                             </Button>
                                         </div>
                                     </div>
@@ -770,19 +815,48 @@ export default function GestaoConvenios() {
 
             {/* Tab 3: Rotinas Globais */}
             {activeTab === 'rotinas' && (
-                <Card className="overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-slate-800/50 border-b border-slate-700/50 text-slate-400">
-                                <tr>
-                                    <th className="px-4 py-3 font-medium text-xs uppercase">Convênio Worker</th>
-                                    <th className="px-4 py-3 font-medium text-xs uppercase">Rotina / Operação</th>
-                                    <th className="px-4 py-3 font-medium text-xs uppercase">Descrição</th>
-                                    <th className="px-4 py-3 font-medium text-xs uppercase">Modo de Execução</th>
-                                    <th className="px-4 py-3 font-medium text-xs uppercase">Status</th>
-                                    <th className="px-4 py-3 font-medium text-xs uppercase text-center">Ações</th>
-                                </tr>
-                            </thead>
+                <div className="space-y-4">
+                    {/* Explanatory Banner Card */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-900/70 p-5 rounded-2xl border border-slate-800 backdrop-blur-md">
+                        <div className="flex gap-3">
+                            <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 h-fit">
+                                <Cpu className="text-indigo-400 w-5 h-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <h4 className="text-sm font-bold text-slate-100">O que são Operações do Worker?</h4>
+                                <p className="text-xs text-slate-400 leading-relaxed">
+                                    São as rotinas e scripts de automação dos robôs que executam ações nos portais dos convênios (ex: <code className="text-indigo-300">op1_consulta</code> para elegibilidade, <code className="text-indigo-300">op2_captura</code> para biometria/facial, <code className="text-indigo-300">op3_execucao</code> para SADT e <code className="text-indigo-300">op4_finalizados</code> para faturamento).
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 h-fit">
+                                <Zap className="text-amber-400 w-5 h-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <h4 className="text-sm font-bold text-slate-100">O que é Modo de Execução?</h4>
+                                <p className="text-xs text-slate-400 leading-relaxed">
+                                    <strong className="text-emerald-400">⚡ Automático:</strong> O worker processa a fila continuamente em segundo plano sem intervenção.<br />
+                                    <strong className="text-amber-400">🖐️ Manual:</strong> A rotina só é disparada quando o operador clica no botão da interface.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <Card className="overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-slate-800/50 border-b border-slate-700/50 text-slate-400">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium text-xs uppercase">Convênio Worker</th>
+                                        <th className="px-4 py-3 font-medium text-xs uppercase">Rotina / Operação</th>
+                                        <th className="px-4 py-3 font-medium text-xs uppercase">Descrição</th>
+                                        <th className="px-4 py-3 font-medium text-xs uppercase">Modo de Execução</th>
+                                        <th className="px-4 py-3 font-medium text-xs uppercase">Status</th>
+                                        <th className="px-4 py-3 font-medium text-xs uppercase text-center">Ações</th>
+                                    </tr>
+                                </thead>
                             <tbody className="divide-y divide-slate-800/60">
                                 {operacoes.map(op => (
                                     <tr key={op.id} className="hover:bg-slate-800/30 transition-colors">
@@ -828,6 +902,7 @@ export default function GestaoConvenios() {
                         </table>
                     </div>
                 </Card>
+                </div>
             )}
 
             {/* True Visual Mind Map Flowchart Canvas Modal (SVG Connection Lines) */}
@@ -1117,81 +1192,82 @@ export default function GestaoConvenios() {
                 </div>
             )}
 
-            {/* Modal: Novo Convênio */}
+            {/* Modal: Nova Relação Convênio x Integrador */}
             {showNewConvModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
                         <div className="flex justify-between items-center p-5 border-b border-slate-800 bg-slate-950/60">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                <Building2 className="text-indigo-400 w-5 h-5" />
-                                Cadastrar Novo Convênio
+                                <Layers className="text-indigo-400 w-5 h-5" />
+                                Nova Relação Convênio x Integrador
                             </h3>
                             <button onClick={() => setShowNewConvModal(false)} className="text-slate-400 hover:text-white">
                                 <X size={20} />
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateConvenio} className="p-6 space-y-4">
+                        <form onSubmit={handleCreateRelacao} className="p-6 space-y-4">
                             <div>
-                                <label className="block text-xs font-semibold text-slate-300 mb-1">Nome do Convênio *</label>
-                                <input
-                                    type="text"
+                                <label className="block text-xs font-semibold text-slate-300 mb-1">Selecione o Convênio *</label>
+                                <select
                                     required
-                                    placeholder="Ex: Unimed Intercâmbio"
-                                    value={newConvForm.nome}
-                                    onChange={(e) => setNewConvForm({ ...newConvForm, nome: e.target.value })}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                />
+                                    value={newConvForm.id_convenio}
+                                    onChange={(e) => setNewConvForm({ ...newConvForm, id_convenio: e.target.value })}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                                >
+                                    <option value="">Selecione um convênio...</option>
+                                    {convenios.map(c => (
+                                        <option key={c.id_convenio} value={c.id_convenio}>
+                                            ID #{c.id_convenio} - {c.nome}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-300 mb-1">Dígitos Carteirinha</label>
-                                    <input
-                                        type="number"
-                                        value={newConvForm.digitos_carteirinha}
-                                        onChange={(e) => setNewConvForm({ ...newConvForm, digitos_carteirinha: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-300 mb-1">Integrador Worker</label>
-                                    <select
-                                        value={newConvForm.id_integrador}
-                                        onChange={(e) => {
-                                            const id = e.target.value;
-                                            const ing = mappingData.integradores.find(i => String(i.id_integrador) === String(id));
-                                            setNewConvForm({
-                                                ...newConvForm,
-                                                id_integrador: id,
-                                                operacoes_habilitadas: (ing?.operacoes || []).map(o => o.rotina)
-                                            });
-                                        }}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                    >
-                                        <option value="">Nenhum (Sem Integração)</option>
-                                        {mappingData.integradores.map(ing => (
-                                            <option key={ing.id_integrador} value={ing.id_integrador}>
-                                                {ing.nome} ({ing.tipo_operacao})
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-300 mb-1">Selecione o Integrador Worker *</label>
+                                <select
+                                    required
+                                    value={newConvForm.id_integrador}
+                                    onChange={(e) => {
+                                        const id = e.target.value;
+                                        const ing = mappingData.integradores.find(i => String(i.id_integrador) === String(id));
+                                        setNewConvForm({
+                                            ...newConvForm,
+                                            id_integrador: id,
+                                            operacoes_habilitadas: (ing?.operacoes || []).map(o => o.rotina)
+                                        });
+                                    }}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                                >
+                                    <option value="">Selecione um integrador...</option>
+                                    {mappingData.integradores.map(ing => (
+                                        <option key={ing.id_integrador} value={ing.id_integrador}>
+                                            {ing.nome} ({ing.tipo_operacao})
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
                             {newConvForm.id_integrador && (
                                 <div className="space-y-2 pt-2 border-t border-slate-800">
-                                    <label className="block text-xs font-semibold text-slate-300">Operações do Integrador a Habilitar</label>
-                                    <div className="flex flex-wrap gap-2">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-semibold text-slate-300">Operações do Integrador a Habilitar:</label>
+                                        <span className="text-[11px] text-slate-400">
+                                            {newConvForm.operacoes_habilitadas.length} selecionada(s)
+                                        </span>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2 pt-1 max-h-48 overflow-y-auto">
                                         {(mappingData.integradores.find(i => String(i.id_integrador) === String(newConvForm.id_integrador))?.operacoes || []).map(op => {
                                             const isChecked = newConvForm.operacoes_habilitadas.includes(op.rotina);
                                             return (
                                                 <label
                                                     key={op.id}
-                                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono cursor-pointer border ${
+                                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono cursor-pointer border select-none transition-all ${
                                                         isChecked 
                                                             ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/50' 
-                                                            : 'bg-slate-950 text-slate-500 border-slate-800'
+                                                            : 'bg-slate-950 text-slate-500 border-slate-800 hover:border-slate-700'
                                                     }`}
                                                 >
                                                     <input
@@ -1204,9 +1280,12 @@ export default function GestaoConvenios() {
                                                                 : [...newConvForm.operacoes_habilitadas, op.rotina];
                                                             setNewConvForm({ ...newConvForm, operacoes_habilitadas: next });
                                                         }}
-                                                        className="rounded border-slate-700 text-indigo-600 focus:ring-0 w-3 h-3"
+                                                        className="rounded border-slate-700 text-indigo-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
                                                     />
                                                     <span>{op.rotina}</span>
+                                                    {op.descricao && (
+                                                        <span className="text-[10px] text-slate-400 font-sans">({op.descricao})</span>
+                                                    )}
                                                 </label>
                                             );
                                         })}
@@ -1220,7 +1299,7 @@ export default function GestaoConvenios() {
                                 </Button>
                                 <Button type="submit" disabled={saving} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5">
                                     {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                                    Cadastrar Convênio
+                                    Vincular Relação
                                 </Button>
                             </div>
                         </form>

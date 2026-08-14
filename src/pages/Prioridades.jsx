@@ -37,6 +37,7 @@ function EscalationExample({ base, esc }) {
 export default function Prioridades() {
     const [tab, setTab] = useState('rules');
     const [convenios, setConvenios] = useState([]);
+    const [workers, setWorkers] = useState([]);
 
     // Priority Rules state
     const [rules, setRules] = useState([]);
@@ -57,14 +58,16 @@ export default function Prioridades() {
         setLoading(true);
         setError('');
         try {
-            const [rulesRes, cfgRes, convRes] = await Promise.all([
-                api.get('/priority-rules/'),
-                api.get('/server-configs/'),
-                api.get('/convenios/'),
+            const [rulesRes, cfgRes, convRes, workersRes] = await Promise.all([
+                api.get('/priority-rules/').catch(() => ({ data: [] })),
+                api.get('/server-configs/').catch(() => ({ data: [] })),
+                api.get('/convenios/').catch(() => ({ data: [] })),
+                api.get('/integradores/worker-keys').catch(() => ({ data: [] }))
             ]);
-            setRules(rulesRes.data);
-            setConfigs(cfgRes.data);
-            setConvenios(convRes.data);
+            setRules(rulesRes.data || []);
+            setConfigs(cfgRes.data || []);
+            setConvenios(convRes.data || []);
+            setWorkers(workersRes.data || []);
         } catch (e) {
             setError('Erro ao carregar dados: ' + (e.response?.data?.detail || e.message));
         } finally {
@@ -339,12 +342,23 @@ export default function Prioridades() {
 
                     {/* Add Config Modal */}
                     {showAddCfg && (
-                        <Modal title="Configurar Preferência de Servidor" onClose={() => setShowAddCfg(false)} onConfirm={addCfg}>
-                            <Field label="Servidor">
+                        <Modal title="Configurar Preferência de Servidor / Worker" onClose={() => setShowAddCfg(false)} onConfirm={addCfg}>
+                            <Field label="Servidor / Worker">
                                 <select value={newCfg.server_url} onChange={e => setNewCfg(p => ({ ...p, server_url: e.target.value }))} style={{ ...inpS, width: '100%' }}>
-                                    {SERVER_PORTS.map(p => (
-                                        <option key={p} value={`http://127.0.0.1:${p}`}>Servidor :{p} (http://127.0.0.1:{p})</option>
-                                    ))}
+                                    {workers && workers.length > 0 && (
+                                        <optgroup label="Workers Cadastrados no Sistema">
+                                            {workers.map(w => (
+                                                <option key={w.id} value={w.worker_key || `worker_${w.id}`}>
+                                                    Worker {w.worker_key} ({w.username} - {w.tipo_operacao || 'convenio'})
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    )}
+                                    <optgroup label="Portas de Servidor Local / VPS">
+                                        {SERVER_PORTS.map(p => (
+                                            <option key={p} value={`http://127.0.0.1:${p}`}>Servidor :{p} (http://127.0.0.1:{p})</option>
+                                        ))}
+                                    </optgroup>
                                 </select>
                             </Field>
                             <Field label="Convênio Preferencial (vazio = qualquer)">
