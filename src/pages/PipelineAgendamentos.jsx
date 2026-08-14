@@ -283,6 +283,40 @@ export default function PipelineAgendamentos() {
         }
     };
 
+    const handleGerarComprovante = async (overrideIds = null) => {
+        const ids = Array.isArray(overrideIds) ? overrideIds : selectedIds;
+        if (!ids.length) {
+            alert("Selecione ao menos um agendamento para gerar o comprovante.");
+            return;
+        }
+        try {
+            const response = await api.post('/comprovante/gerar', { agendamento_ids: ids }, { responseType: 'blob' });
+            const isZip = response.headers['content-type']?.includes('zip');
+            const fileName = isZip ? 'comprovantes_unimed.zip' : 'comprovante_unimed.pdf';
+            
+            const blob = new Blob([response.data], { type: response.headers['content-type'] });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (err) {
+            alert("Erro ao gerar comprovante: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleImprimirIpasgo = async (id) => {
+        try {
+            const res = await api.post('/agendamentos/imprimir-ipasgo', { agendamento_id: id });
+            alert(res.data.message || "Job OP12 de impressão IPASGO enfileirado!");
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao enviar comando de impressão IPASGO.");
+        }
+    };
+
     const handleRemoverFalta = async (ids = selectedIds) => {
         if (ids.length === 0) return;
         const firstAg = agendamentos.find(a => ids.includes(a.id_agendamento));
@@ -515,6 +549,14 @@ export default function PipelineAgendamentos() {
                             <>
                                 <Button 
                                     size="sm" 
+                                    variant="outline"
+                                    className="border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/20" 
+                                    onClick={handleGerarComprovante}
+                                >
+                                    <Printer className="w-4 h-4 mr-1.5" /> Imprimir Comprovante
+                                </Button>
+                                <Button 
+                                    size="sm" 
                                     className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold" 
                                     onClick={() => handleTriggerWorkflow(selectedIds)}
                                 >
@@ -698,6 +740,34 @@ export default function PipelineAgendamentos() {
                                                                 </button>
                                                                 <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap z-20">
                                                                     Remover Falta (OP5)
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {(agenda.id_convenio === 2 || agenda.id_convenio === 3 || agenda.nome_convenio?.toLowerCase().includes('unimed')) && (
+                                                            <div className="relative group">
+                                                                <button
+                                                                    onClick={() => handleGerarComprovante([agenda.id_agendamento])}
+                                                                    className="p-1 rounded hover:bg-cyan-500/10 text-cyan-400 transition-colors"
+                                                                >
+                                                                    <Printer size={15} />
+                                                                </button>
+                                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap z-20">
+                                                                    Imprimir Comprovante Unimed (PDF)
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {(agenda.id_convenio === 6 || agenda.nome_convenio?.toLowerCase().includes('ipasgo')) && (
+                                                            <div className="relative group">
+                                                                <button
+                                                                    onClick={() => handleImprimirIpasgo(agenda.id_agendamento)}
+                                                                    className="p-1 rounded hover:bg-cyan-500/10 text-cyan-400 transition-colors"
+                                                                >
+                                                                    <Printer size={15} />
+                                                                </button>
+                                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap z-20">
+                                                                    Imprimir Guia IPASGO (OP12)
                                                                 </div>
                                                             </div>
                                                         )}

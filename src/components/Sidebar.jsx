@@ -16,7 +16,7 @@ export default function Sidebar() {
         if (['/carteirinhas', '/corpo-clinico'].includes(path)) return 'cadastros';
         if (['/guias', '/pei', '/terapias', '/agenda-fixa'].includes(path)) return 'autorizacoes';
         if (['/agendamentos', '/pipeline', '/faturamento/lotes', '/faturamento/agendamentos', '/faturamento/conciliacao', '/faturamento/protocolo'].includes(path)) return 'faturamento';
-        if (['/gestao-integradores', '/gestao-convenios', '/clientes'].includes(path)) return 'administracao';
+        if (['/gestao-integradores', '/gestao-convenios', '/prioridades', '/clientes'].includes(path)) return 'administracao';
         return 'autorizacoes'; // Default
     });
 
@@ -172,6 +172,7 @@ export default function Sidebar() {
                             <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1 mt-1">
                                 <Link to="/gestao-integradores" className={getLinkClass('/gestao-integradores')}>Gestão Integradores</Link>
                                 <Link to="/gestao-convenios" className={getLinkClass('/gestao-convenios')}>Gestão Convênios</Link>
+                                <Link to="/prioridades" className={getLinkClass('/prioridades')}>Regras de Prioridade</Link>
                                 <Link to="/clientes" className={getLinkClass('/clientes')}>Clientes (Admin)</Link>
                             </div>
                         )}

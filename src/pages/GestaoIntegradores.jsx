@@ -156,6 +156,16 @@ export default function GestaoIntegradores() {
         setKeyForm(prev => ({ ...prev, api_key: res }));
     };
 
+    const handleToggleTimeout = async (ing) => {
+        try {
+            await api.put(`/integradores/${ing.id_integrador}`, { timeout_captura: !ing.timeout_captura });
+            setSuccessMsg(`Timeout de captura do integrador ${ing.nome} ${!ing.timeout_captura ? 'ativado (59min)' : 'desativado'}!`);
+            loadData();
+        } catch (err) {
+            setError('Falha ao atualizar timeout de captura');
+        }
+    };
+
     const selectedIng = integradores.find(i => String(i.id_integrador) === String(selectedIntegradorId));
 
     return (
@@ -168,7 +178,7 @@ export default function GestaoIntegradores() {
                         Gestão de Integradores & Workers
                     </h1>
                     <p className="text-slate-400 text-sm mt-1">
-                        Gerenciamento unificado de integradores, tipos de processamento e servidores worker.
+                        Gerenciamento unificado de integradores, timeout de captura, rotinas e servidores worker.
                     </p>
                 </div>
 
@@ -230,7 +240,7 @@ export default function GestaoIntegradores() {
                 </button>
             </div>
 
-            {/* TAB 1: INTEGRADIRES */}
+            {/* TAB 1: INTEGRADORES */}
             {activeTab === 'integradores' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {integradores.map(ing => (
@@ -238,13 +248,13 @@ export default function GestaoIntegradores() {
                             <div>
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                                        ID #{ing.id_integrador} (Conv #{ing.id_convenio})
+                                        ID #{ing.id_integrador}
                                     </span>
 
                                     <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
                                         ing.tipo_operacao === 'agendamento' 
                                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                                            : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                             : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                                     }`}>
                                         {ing.tipo_operacao === 'agendamento' ? '🟢 Agendamento' : '🔵 Convênio'}
                                     </span>
@@ -256,6 +266,27 @@ export default function GestaoIntegradores() {
                                 <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
                                     <span>Rotinas cadastradas:</span>
                                     <span className="font-bold text-slate-200">{ing.operacoes?.length || 0}</span>
+                                </div>
+
+                                {/* Toggle Timeout de Captura (59min) */}
+                                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs text-slate-200 font-medium">Timeout de Captura (59min)</span>
+                                        <span className="text-[10px] text-slate-400">Exibir contador TimeoutPie</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleToggleTimeout(ing)}
+                                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            ing.timeout_captura ? 'bg-primary' : 'bg-slate-700'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                                ing.timeout_captura ? 'translate-x-4' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
                                 </div>
                             </div>
 

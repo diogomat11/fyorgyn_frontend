@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield, RefreshCw, Printer } from 'lucide-react';
+import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield, RefreshCw, Printer, Check, Info, AlertTriangle } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
 // Design System components matching the app's aesthetic
@@ -85,6 +85,14 @@ export default function Agendamentos() {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [loading, setLoading] = useState(false);
+    const [copiedId, setCopiedId] = useState(null);
+
+    const handleCopyCarteirinha = (agenda) => {
+        if (!agenda.carteirinha) return;
+        navigator.clipboard.writeText(agenda.carteirinha);
+        setCopiedId(agenda.id_agendamento);
+        setTimeout(() => setCopiedId(null), 2000);
+    };
 
     // Reset de paginação ao trocar de rota/página
     useEffect(() => {
@@ -573,8 +581,32 @@ export default function Agendamentos() {
                                         <input type="checkbox" className="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary focus:ring-offset-slate-900" checked={selectedIds.includes(agenda.id_agendamento)} onChange={() => toggleSelect(agenda.id_agendamento)} />
                                     </td>
                                     <td className="px-2 py-1.5">
-                                        <div className="font-medium text-slate-100 text-xs min-w-[180px] max-w-[280px] truncate" title={agenda.Nome_Paciente}>{agenda.Nome_Paciente}</div>
-                                        <div className="text-[10px] text-slate-500 font-mono">{agenda.carteirinha}</div>
+                                        <div className="flex items-center gap-1.5 relative group">
+                                            <div className="font-medium text-slate-100 text-xs min-w-[140px] max-w-[220px] truncate" title={agenda.Nome_Paciente}>{agenda.Nome_Paciente}</div>
+                                            {agenda.carteirinha && agenda.carteirinha.trim() !== '' ? (
+                                                <div 
+                                                    className="relative cursor-pointer shrink-0"
+                                                    onClick={() => handleCopyCarteirinha(agenda)}
+                                                    title="Clique para copiar carteirinha"
+                                                >
+                                                    {copiedId === agenda.id_agendamento ? (
+                                                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                                    ) : (
+                                                        <Info className="w-3.5 h-3.5 text-indigo-400 hover:text-indigo-300 transition-colors" />
+                                                    )}
+                                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] font-mono px-2 py-1 rounded shadow-xl border border-slate-700 whitespace-nowrap z-30">
+                                                        {copiedId === agenda.id_agendamento ? "Copiado!" : `Carteirinha: ${agenda.carteirinha} (Clique para copiar)`}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="relative cursor-help shrink-0">
+                                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:block bg-amber-950/90 text-amber-200 text-[10px] px-2 py-1 rounded shadow-xl border border-amber-600/50 whitespace-nowrap z-30 font-medium">
+                                                        Sem carteirinha cadastrada
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-1 py-1.5 text-slate-300 text-[11px] whitespace-nowrap">
                                         <div>{formatDate(agenda.data)}</div>

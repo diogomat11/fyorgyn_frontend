@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldOff } from 'lucide-react';
+import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldOff, Check, Info, AlertTriangle } from 'lucide-react';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import SearchableSelect from '../components/SearchableSelect';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -87,6 +87,14 @@ export default function BaseGuias() {
     const [carteirinhas, setCarteirinhas] = useState([]);
     const [isExporting, setIsExporting] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [copiedId, setCopiedId] = useState(null);
+
+    const handleCopyCarteirinha = (guiaId, carteirinhaNum) => {
+        if (!carteirinhaNum) return;
+        navigator.clipboard.writeText(carteirinhaNum);
+        setCopiedId(guiaId);
+        setTimeout(() => setCopiedId(null), 2000);
+    };
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -508,9 +516,9 @@ export default function BaseGuias() {
                                     <th onClick={() => handleSort('created_at')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
                                         Data Import {sortConfig.key === 'created_at' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                     </th>
-                                    <th className="px-6 py-3 text-left">Carteira / Paciente</th>
+                                    <th className="px-6 py-3 text-left">Paciente</th>
                                     <th onClick={() => handleSort('guia')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
-                                        Guia {sortConfig.key === 'guia' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
+                                        Status / Guia {sortConfig.key === 'guia' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                     </th>
                                     {activeTab === 'solicitacoes' ? (
                                         <th onClick={() => handleSort('data_solicitacao')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
@@ -536,7 +544,6 @@ export default function BaseGuias() {
                                             <th onClick={() => handleSort('saldo')} className="px-6 py-3 text-left cursor-pointer hover:text-primary">
                                                 Saldo {sortConfig.key === 'saldo' && (sortConfig.direction === 'asc' ? '▲' : '▼')}
                                             </th>
-                                            <th className="px-6 py-3 text-left">Status Captura</th>
                                             <th className="px-6 py-3 text-left">Validação</th>
                                         </>
                                     )}
@@ -561,8 +568,59 @@ export default function BaseGuias() {
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDateTime(g.created_at)}</td>
-                                            <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">{g.nome_paciente ? `${g.carteirinha_numero || ''} - ${g.nome_paciente}` : g.carteirinha_id}</td>
-                                            <td className="px-6 py-4 text-sm text-text-secondary font-mono bg-slate-900/30 rounded px-2 py-1 inline-block mt-2 whitespace-nowrap">{g.guia}</td>
+                                            <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">
+                                                {(() => {
+                                                    const numCarteirinha = paciente?.carteirinha || g.carteirinha || g.carteirinha_num;
+                                                    return (
+                                                        <div className="flex items-center gap-1.5 relative group">
+                                                            <span>{g.nome_paciente || '—'}</span>
+                                                            {numCarteirinha && String(numCarteirinha).trim() !== '' ? (
+                                                                <div 
+                                                                    className="relative cursor-pointer shrink-0"
+                                                                    onClick={() => handleCopyCarteirinha(g.id, numCarteirinha)}
+                                                                    title="Clique para copiar carteirinha"
+                                                                >
+                                                                    {copiedId === g.id ? (
+                                                                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                                                    ) : (
+                                                                        <Info className="w-3.5 h-3.5 text-indigo-400 hover:text-indigo-300 transition-colors" />
+                                                                    )}
+                                                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] font-mono px-2 py-1 rounded shadow-xl border border-slate-700 whitespace-nowrap z-30">
+                                                                        {copiedId === g.id ? "Copiado!" : `Carteirinha: ${numCarteirinha} (Clique para copiar)`}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="relative cursor-help shrink-0">
+                                                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                                                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:block bg-amber-950/90 text-amber-200 text-[10px] px-2 py-1 rounded shadow-xl border border-amber-600/50 whitespace-nowrap z-30 font-medium">
+                                                                        Sem carteirinha cadastrada
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
+                                                <div className="flex items-center gap-2">
+                                                    {(g.id_convenio === 3 || g.id_convenio === 21 || g.timeout_captura) ? (
+                                                        <TimeoutPie timestampCaptura={g.timestamp_captura} />
+                                                    ) : (g.id_convenio === 2 || g.id_integrador === 2) ? (
+                                                        g.timestamp_captura ? (
+                                                            <span title={`Guia Capturada em ${formatDateTime(g.timestamp_captura)}`} className="inline-flex items-center text-emerald-400 cursor-help">
+                                                                <CheckCircle size={17} className="text-emerald-400" />
+                                                            </span>
+                                                        ) : (
+                                                            <span title="Guia não capturada no portal" className="inline-flex items-center text-rose-400 cursor-help">
+                                                                <XCircle size={17} className="text-rose-400/80" />
+                                                            </span>
+                                                        )
+                                                    ) : (
+                                                        <span className="text-slate-600 font-mono" title="Captura não aplicável para este convênio">—</span>
+                                                    )}
+                                                    <span className="font-mono bg-slate-900/30 rounded px-2 py-1 inline-block">{g.guia}</span>
+                                                </div>
+                                            </td>
                                             {activeTab === 'solicitacoes' ? (
                                                 <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDate(g.data_solicitacao)}</td>
                                             ) : (
@@ -594,15 +652,6 @@ export default function BaseGuias() {
                                             {activeTab === 'autorizadas' && (
                                                 <>
                                                     <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{g.saldo ?? '-'}</td>
-                                                    <td className="px-6 py-4 text-sm whitespace-nowrap">
-                                                        {g.id_convenio === 3 ? (
-                                                            <TimeoutPie timestampCaptura={g.timestamp_captura} />
-                                                        ) : g.timestamp_captura ? (
-                                                            <span className="text-xs text-emerald-400">✓ Capturada</span>
-                                                        ) : (
-                                                            <span className="text-xs text-slate-500">—</span>
-                                                        )}
-                                                    </td>
                                                     <td className="px-6 py-4 text-sm whitespace-nowrap">
                                                         {(() => {
                                                             // valida_prestador pode vir como objeto completo {tipo_json, guias}

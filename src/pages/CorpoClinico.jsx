@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { Trash2, Plus, Edit, Search, X, Check, Stethoscope, User, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import Pagination from '../components/Pagination';
 
 // Design System
 import Button from '../components/ui/Button';
@@ -11,6 +12,9 @@ import Badge from '../components/ui/Badge';
 
 export default function CorpoClinico() {
     const [profissionais, setProfissionais] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterTipo, setFilterTipo] = useState('');
@@ -32,22 +36,44 @@ export default function CorpoClinico() {
         tipo_profissional: 'profissional'
     });
 
-    const fetchProfissionais = async () => {
+    const fetchProfissionais = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await api.get('/agendamentos/profissionais');
-            setProfissionais(res.data);
+            const params = {
+                page,
+                pageSize,
+                search: searchQuery.trim() || undefined,
+                tipo: filterTipo || undefined
+            };
+            const res = await api.get('/agendamentos/profissionais', { params });
+            if (res.data && Array.isArray(res.data.data)) {
+                setProfissionais(res.data.data);
+                setTotal(res.data.total || 0);
+            } else if (Array.isArray(res.data)) {
+                setProfissionais(res.data);
+                setTotal(res.data.length);
+            } else {
+                setProfissionais([]);
+                setTotal(0);
+            }
         } catch (error) {
             console.error("Error fetching profissionais", error);
             alert("Erro ao carregar corpo clínico: " + (error.response?.data?.detail || error.message));
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, pageSize, searchQuery, filterTipo]);
 
     useEffect(() => {
-        fetchProfissionais();
-    }, []);
+        const timer = setTimeout(() => {
+            fetchProfissionais();
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [fetchProfissionais]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchQuery, filterTipo]);
 
     const handleOpenCreateModal = () => {
         setEditingProf(null);
@@ -179,7 +205,7 @@ export default function CorpoClinico() {
             <Card className="overflow-hidden bg-slate-900/40 border-slate-800 backdrop-blur-md">
                 {loading ? (
                     <div className="py-20 text-center text-text-secondary">Carregando corpo clínico...</div>
-                ) : filteredProfissionais.length === 0 ? (
+                ) : profissionais.length === 0 ? (
                     <div className="py-20 text-center text-text-secondary">Nenhum profissional encontrado.</div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -196,7 +222,7 @@ export default function CorpoClinico() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {filteredProfissionais.map(p => (
+                                {profissionais.map(p => (
                                     <tr key={`${p.id_profissional}-${p.area}`} className="hover:bg-slate-800/30 transition-colors">
                                         <td className="px-6 py-4 text-sm font-medium text-text-primary whitespace-nowrap">
                                             {p.nome}
@@ -240,6 +266,20 @@ export default function CorpoClinico() {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                )}
+                
+                {/* Pagination Footer */}
+                {total > 0 && (
+                    <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-xs text-text-secondary">
+                            Mostrando <span className="font-medium text-slate-200">{(page - 1) * pageSize + 1}</span> a <span className="font-medium text-slate-200">{Math.min(page * pageSize, total)}</span> de <span className="font-medium text-slate-200">{total}</span> profissionais
+                        </div>
+                        <Pagination 
+                            currentPage={page} 
+                            totalPages={Math.ceil(total / pageSize) || 1} 
+                            onPageChange={setPage} 
+                        />
                     </div>
                 )}
             </Card>

@@ -368,30 +368,38 @@ export default function GestaoTerapias() {
         setSkip(0);
     }, [filterPaciente, filterArea, filterStatus]);
 
-    useEffect(() => {
-        fetchRecords();
-        api.get('/carteirinhas/?limit=1000').then(res => {
-            // Filter unique patients
+    const ensureCarteirinhas = async () => {
+        if (carteirinhas.length > 0) return;
+        try {
+            const res = await api.get('/carteirinhas/?limit=500');
             const uniquePatients = [];
             const ids = new Set();
-            for (const c of (res.data.data || [])) {
+            for (const c of (res.data.data || res.data || [])) {
                 if (c.id_paciente && !ids.has(c.id_paciente)) {
                     ids.add(c.id_paciente);
                     uniquePatients.push(c);
                 }
             }
             setCarteirinhas(uniquePatients);
-        }).catch(err => console.error(err));
+        } catch (err) {
+            console.error('Erro ao carregar carteirinhas:', err);
+        }
+    };
+
+    useEffect(() => {
+        fetchRecords();
     }, [fetchRecords]);
 
     const handleNew = () => {
         setEditData(null);
         setModalOpen(true);
+        ensureCarteirinhas();
     };
 
     const handleEdit = (record) => {
         setEditData(record);
         setModalOpen(true);
+        ensureCarteirinhas();
     };
 
     const handleDelete = async (id) => {
