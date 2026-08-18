@@ -101,8 +101,10 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
 
     useEffect(() => {
         const selectedCart = carteirinhas.find(c => String(c.id) === String(formData.carteirinha_id));
-        if (selectedCart && selectedCart.id_paciente) {
-            const patientId = selectedCart.id_paciente;
+        if (selectedCart) {
+            const patientId = selectedCart.id_paciente || selectedCart.id;
+            const patientName = selectedCart.paciente ? encodeURIComponent(selectedCart.paciente) : '';
+            
             // 1. Fetch Medical Reports (RM)
             api.get(`/relatorios/?id_paciente=${patientId}`)
                 .then(res => setMedicalReports(res.data.data || res.data || []))
@@ -111,14 +113,14 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                     setMedicalReports([]);
                 });
             // 2. Fetch Avaliacao Inicial (ANEXO-II)
-            api.get(`/guias/relatorios?id_paciente=${patientId}&tipo_relatorio=ANEXO-II`)
+            api.get(`/guias/relatorios?id_paciente=${patientId}&tipo_relatorio=ANEXO-II&nome_paciente=${patientName}`)
                 .then(res => setAiReports(res.data || []))
                 .catch(err => {
                     console.error("Erro ao buscar relatorios AI:", err);
                     setAiReports([]);
                 });
             // 3. Fetch PTS (PTS)
-            api.get(`/guias/relatorios?id_paciente=${patientId}&tipo_relatorio=PTS`)
+            api.get(`/guias/relatorios?id_paciente=${patientId}&tipo_relatorio=PTS&nome_paciente=${patientName}`)
                 .then(res => setPtsReports(res.data || []))
                 .catch(err => {
                     console.error("Erro ao buscar relatorios PTS:", err);
