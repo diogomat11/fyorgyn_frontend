@@ -824,10 +824,14 @@ export default function GestaoIntegradores() {
             {/* TAB 3: AGENDAMENTOS / CRON */}
             {activeTab === 'crons' && (
                 <div className="space-y-4">
-                    <Card className="p-4 bg-slate-900/60 border-slate-800">
+                    <Card className="p-4 bg-slate-900/60 border-slate-800 space-y-2">
                         <p className="text-xs text-slate-400">
-                            Agendamento diário que cria jobs da rotina configurada para <strong className="text-slate-200">todas as carteirinhas ativas</strong> dos convênios do integrador.
+                            <strong className="text-slate-200">Consulta de guias — lote diário</strong>: cria jobs da rotina configurada para <strong className="text-slate-200">todas as carteirinhas ativas</strong> dos convênios do integrador.
                             Executa no horário definido (fuso de Brasília por padrão) com guarda de execução no banco — não duplica após restart, e executa em atraso se o servidor estava fora do ar.
+                            Pendentes há mais de 24h sem processar são <strong className="text-slate-200">apagados automaticamente</strong> (retenção).
+                        </p>
+                        <p className="text-[11px] text-amber-300/80 border-t border-slate-800 pt-2">
+                            ⚠️ Não confundir com a <strong>execução de sessões</strong> (job por agendamento, ex.: op3_execucao): esse controle fica em <strong>Gestão de Convênios → Modo de Execução (Automático/Manual)</strong> e nas flags <code>auto_executar</code> das credenciais — é um fluxo distinto deste lote de consulta.
                         </p>
                     </Card>
 
@@ -850,6 +854,10 @@ export default function GestaoIntegradores() {
                                                 Integrador #{cron.id_integrador}
                                             </span>
                                             <h3 className="font-bold text-lg text-white">{cron.nome_integrador}</h3>
+                                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-semibold"
+                                                  title={`Rotina do lote: ${cron.rotina}`}>
+                                                {cron.descricao || 'Lote diário'}
+                                            </span>
                                             <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${cron.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                                                 {cron.enabled ? 'Habilitado' : 'Desabilitado'}
                                             </span>
