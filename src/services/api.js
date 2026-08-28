@@ -36,4 +36,26 @@ api.interceptors.response.use(
     }
 );
 
+// ── Capabilities: integradores de agendamento habilitados ao usuário (gating de OPs) ──
+// Fonte: GET /integradores/meus (plano docs/plano_integradores_agendamento.md, D5).
+export const lerMeusIntegradoresCache = () => {
+    try {
+        return JSON.parse(localStorage.getItem('meus_integradores') || '[]');
+    } catch {
+        return [];
+    }
+};
+
+export const carregarMeusIntegradores = async () => {
+    try {
+        const { data } = await api.get('/integradores/meus');
+        const lista = data || [];
+        localStorage.setItem('meus_integradores', JSON.stringify(lista));
+        return lista;
+    } catch (e) {
+        console.error('Erro ao carregar integradores habilitados (usando cache):', e);
+        return lerMeusIntegradoresCache();
+    }
+};
+
 export default api;

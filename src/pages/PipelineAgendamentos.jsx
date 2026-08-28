@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../services/api';
+import { carregarMeusIntegradores, lerMeusIntegradoresCache } from '../services/api';
 import Pagination from '../components/Pagination';
 import { 
     Calendar, CheckCircle, XCircle, Clock, AlertCircle, 
@@ -70,7 +71,16 @@ export default function PipelineAgendamentos() {
     useEffect(() => {
         api.get('/unidades/').then(res => setUnidades(res.data)).catch(console.error);
         api.get('/motivos-faltas/').then(res => setMotivosFalta(res.data)).catch(console.error);
+        carregarMeusIntegradores().then(setMeusIntegradores).catch(() => {});
     }, []);
+
+    // ── Gating de OPs por capabilities (plano integradores agendamento, D5) ──
+    // Toolbar: exibe a OP se ALGUM integrador vinculado a suporta.
+    // Linha: valida o convênio do agendamento contra o integrador canônico dele.
+    const [meusIntegradores, setMeusIntegradores] = useState(lerMeusIntegradoresCache);
+    const opDisponivel = (op) => meusIntegradores.some(i => (i.operacoes || []).includes(op));
+    const opDisponivelPara = (idConvenio, op) =>
+        meusIntegradores.some(i => i.id_convenio === idConvenio && (i.operacoes || []).includes(op));
 
     useEffect(() => {
         const params = new URLSearchParams();
@@ -183,7 +193,11 @@ export default function PipelineAgendamentos() {
                 data_inicio: filters.data_inicio || null,
                 data_fim: filters.data_fim || null,
                 id_paciente: "0",
-                id_convenio: filters.id_convenio ? parseInt(filters.id_convenio) : 101
+                // Convênio do integrador vinculado (não mais hardcode 101); se o filtro
+                // de convênio estiver ativo, ele tem precedência.
+                id_convenio: filters.id_convenio
+                    ? parseInt(filters.id_convenio)
+                    : (meusIntegradores[0]?.id_convenio ?? null)
             });
         } catch (error) {
             console.error('Erro ao iniciar sincronização:', error);
@@ -535,10 +549,10 @@ export default function PipelineAgendamentos() {
                         {selectedIds.length} item(s) selecionado(s)
                     </span>
                     <div className="flex gap-2">
-                        {activeTab === 'faltas' && (
-                            <Button 
-                                size="sm" 
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white" 
+                        {activeTab === 'faltas' && opDisponivel('remover_falta') && (
+                            <Button
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
                                 onClick={() => handleRemoverFalta(selectedIds)}
                             >
                                 <RotateCcw className="w-4 h-4 mr-1.5" /> Remover Falta (OP5)
@@ -562,20 +576,24 @@ export default function PipelineAgendamentos() {
                                 >
                                     <Play className="w-4 h-4 mr-1.5" /> Acionar Workflow Inteligente
                                 </Button>
-                                <Button 
-                                    size="sm" 
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white" 
+                                {opDisponivel('confirmar_agendamento') && (
+                                <Button
+                                    size="sm"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                                     onClick={() => handleConfirmarPortal(selectedIds, false)}
                                 >
                                     <CheckCircle className="w-4 h-4 mr-1.5" /> Confirmar no Portal (OP3)
                                 </Button>
-                                <Button 
-                                    size="sm" 
-                                    className="bg-red-600 hover:bg-red-700 text-white" 
+                                )}
+                                {opDisponivel('registrar_falta') && (
+                                <Button
+                                    size="sm"
+                                    className="bg-red-600 hover:bg-red-700 text-white"
                                     onClick={() => handleOpenFaltaModal(null)}
                                 >
                                     <XCircle className="w-4 h-4 mr-1.5" /> Registrar Falta (OP4)
                                 </Button>
+                                )}
                             </>
                         )}
 
@@ -588,17 +606,19 @@ export default function PipelineAgendamentos() {
                                 >
                                     <Play className="w-4 h-4 mr-1.5" /> Executar / Validar
                                 </Button>
-                                <Button 
-                                    size="sm" 
-                                    className="bg-red-600 hover:bg-red-700 text-white" 
+                                {opDisponivel('registrar_falta') && (
+                                <Button
+                                    size="sm"
+                                    className="bg-red-600 hover:bg-red-700 text-white"
                                     onClick={() => handleOpenFaltaModal(null)}
                                 >
                                     <XCircle className="w-4 h-4 mr-1.5" /> Registrar Falta (OP4)
                                 </Button>
-                                <Button 
-                                    size="sm" 
+                                )}
+                                <Button
+                                    size="sm"
                                     variant="outline"
-                                    className="border-amber-500/50 text-amber-300 hover:bg-amber-500/20" 
+                                    className="border-amber-500/50 text-amber-300 hover:bg-amber-500/20"
                                     onClick={() => handleConfirmarPortal(selectedIds, true)}
                                 >
                                     <RotateCcw className="w-4 h-4 mr-1.5" /> Remover Confirmação
@@ -730,7 +750,7 @@ export default function PipelineAgendamentos() {
                                                     <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
                                                 ) : (
                                                     <>
-                                                        {activeTab === 'faltas' && (
+                                                        {activeTab === 'faltas' && opDisponivelPara(agenda.id_convenio, 'remover_falta') && (
                                                             <div className="relative group">
                                                                 <button
                                                                     onClick={() => handleRemoverFalta([agenda.id_agendamento])}
@@ -774,6 +794,7 @@ export default function PipelineAgendamentos() {
 
                                                         {activeTab === 'a_confirmar' && (
                                                             <>
+                                                                {opDisponivelPara(agenda.id_convenio, 'confirmar_agendamento') && (
                                                                 <div className="relative group">
                                                                     <button
                                                                         onClick={() => handleConfirmarPortal([agenda.id_agendamento], false)}
@@ -781,10 +802,12 @@ export default function PipelineAgendamentos() {
                                                                     >
                                                                         <CheckCircle size={15} />
                                                                     </button>
-                                                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap z-20">
-                                                                        Confirmar no Portal (OP3)
-                                                                    </div>
+                                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block bg-slate-950 text-slate-200 text-[10px] px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap z-20">
+                                                                    Confirmar no Portal (OP3)
                                                                 </div>
+                                                                </div>
+                                                                )}
+                                                                {opDisponivelPara(agenda.id_convenio, 'registrar_falta') && (
                                                                 <div className="relative group">
                                                                     <button
                                                                         onClick={() => handleOpenFaltaModal(agenda)}
@@ -796,6 +819,7 @@ export default function PipelineAgendamentos() {
                                                                         Registrar Falta no Portal (OP4)
                                                                     </div>
                                                                 </div>
+                                                                )}
                                                             </>
                                                         )}
 
@@ -812,6 +836,7 @@ export default function PipelineAgendamentos() {
                                                                         Executar / Validar
                                                                     </div>
                                                                 </div>
+                                                                {opDisponivelPara(agenda.id_convenio, 'registrar_falta') && (
                                                                 <div className="relative group">
                                                                     <button
                                                                         onClick={() => handleOpenFaltaModal(agenda)}
@@ -823,6 +848,8 @@ export default function PipelineAgendamentos() {
                                                                         Registrar Falta (OP4)
                                                                     </div>
                                                                 </div>
+                                                                )}
+                                                                {opDisponivelPara(agenda.id_convenio, 'confirmar_agendamento') && (
                                                                 <div className="relative group">
                                                                     <button
                                                                         onClick={() => handleConfirmarPortal([agenda.id_agendamento], true)}
@@ -834,6 +861,7 @@ export default function PipelineAgendamentos() {
                                                                         Remover Confirmação (OP3)
                                                                     </div>
                                                                 </div>
+                                                                )}
                                                             </>
                                                         )}
 

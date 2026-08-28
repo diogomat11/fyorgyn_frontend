@@ -271,6 +271,19 @@ export default function Importacoes() {
     }
   };
 
+  // Multiprestador: detecta itens de resultado de captura (op2) com status
+  // "Capturada por outro prestador" (guia não exibida no portal por estar com
+  // outro cod_prestador; o hub já criou job de consulta para re-sincronizar).
+  const hasCapturadaPorOutroPrestador = (job) => {
+    const rd = job?.result_data;
+    if (!rd) return false;
+    const items = Array.isArray(rd) ? rd : (Array.isArray(rd.data) ? rd.data : []);
+    return items.some(
+      (i) => i && typeof i === 'object' &&
+        String(i.status || '').trim().toLowerCase() === 'capturada por outro prestador'
+    );
+  };
+
   const handleCreateJob = async () => {
     const typeMap = { 'single': 'single', 'multiple': 'multiple', 'all': 'all' };
 
@@ -1325,7 +1338,17 @@ export default function Importacoes() {
                 <tr key={job.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">#{job.id}</td>
                   <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDateTime(job.created_at)}</td>
-                  <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{job.rotina || 'Padrão'}</td>
+                  <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
+                    {job.rotina || 'Padrão'}
+                    {hasCapturadaPorOutroPrestador(job) && (
+                      <span
+                        className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                        title="Guia não exibida no portal (multiprestador): capturada por outro cod_prestador. Um job de consulta foi criado para re-sincronizar."
+                      >
+                        ⚠ Capturada por outro prestador
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap truncate max-w-[150px]" title={job.params}>
                     {formatParamsSafely(job.params)}
                   </td>

@@ -15,6 +15,7 @@ export default function Sidebar() {
         const path = location.pathname;
         if (['/carteirinhas', '/corpo-clinico'].includes(path)) return 'cadastros';
         if (['/guias', '/pei', '/terapias', '/agenda-fixa'].includes(path)) return 'autorizacoes';
+        if (['/docs/relatorios-medicos', '/docs/avaliacao-inicial', '/docs/relatorios-pts'].includes(path)) return 'docs_autorizacao';
         if (['/agendamentos', '/pipeline', '/faturamento/lotes', '/faturamento/agendamentos', '/faturamento/conciliacao', '/faturamento/protocolo'].includes(path)) return 'faturamento';
         if (['/gestao-integradores', '/gestao-convenios', '/prioridades', '/clientes'].includes(path)) return 'administracao';
         return 'autorizacoes'; // Default
@@ -109,6 +110,26 @@ export default function Sidebar() {
                             <Link to="/pei" className={getLinkClass('/pei')}>Gestão PEI</Link>
                             <Link to="/terapias" className={getLinkClass('/terapias')}>Gestão Terapias</Link>
                             <Link to="/agenda-fixa" className={getLinkClass('/agenda-fixa')}>Agenda Fixa</Link>
+                        </div>
+                    )}
+                </div>
+
+                {/* Section: Docs Autorização */}
+                <div className="mt-1 mb-1">
+                    <button 
+                        onClick={() => toggleSection('docs_autorizacao')}
+                        className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200 transition-colors"
+                    >
+                        <div className="flex items-center gap-3">
+                            <FileText size={16} className="text-slate-400" /> Docs Autorização
+                        </div>
+                        {openSection === 'docs_autorizacao' ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    </button>
+                    {openSection === 'docs_autorizacao' && (
+                        <div className="flex flex-col ml-6 pl-3 border-l border-slate-700 space-y-1 mt-1">
+                            <Link to="/docs/relatorios-medicos" className={getLinkClass('/docs/relatorios-medicos')}>Relatórios Médicos</Link>
+                            <Link to="/docs/avaliacao-inicial" className={getLinkClass('/docs/avaliacao-inicial')}>Avaliação Inicial (Anexo II)</Link>
+                            <Link to="/docs/relatorios-pts" className={getLinkClass('/docs/relatorios-pts')}>Relatórios Clínicos (PTS)</Link>
                         </div>
                     )}
                 </div>

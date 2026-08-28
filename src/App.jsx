@@ -24,6 +24,7 @@ import GestaoIntegradores from './pages/GestaoIntegradores';
 import PipelineAgendamentos from './pages/PipelineAgendamentos';
 import AgendaFixa from './pages/AgendaFixa';
 import GestaoUnidades from './pages/GestaoUnidades';
+import DocsAutorizacao from './pages/DocsAutorizacao';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -156,6 +157,25 @@ export default function App() {
         <Route path="/corpo-clinico" element={
           <PrivateRoute>
             <CorpoClinico />
+          </PrivateRoute>
+        } />
+
+        {/* Docs Autorização */}
+        <Route path="/docs/relatorios-medicos" element={
+          <PrivateRoute>
+            <DocsAutorizacao tipo="RM" titulo="Relatórios Médicos" />
+          </PrivateRoute>
+        } />
+
+        <Route path="/docs/avaliacao-inicial" element={
+          <PrivateRoute>
+            <DocsAutorizacao tipo="ANEXO-II" titulo="Avaliação Inicial (Anexo II)" />
+          </PrivateRoute>
+        } />
+
+        <Route path="/docs/relatorios-pts" element={
+          <PrivateRoute>
+            <DocsAutorizacao tipo="PTS" titulo="Relatórios Clínicos (PTS)" />
           </PrivateRoute>
         } />
 

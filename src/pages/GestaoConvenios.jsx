@@ -211,6 +211,37 @@ export default function GestaoConvenios() {
         }
     };
 
+    const PRAZO_PEI_OPTIONS = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360, 365];
+
+    const handleConvConfigChange = (id_convenio, field, value) => {
+        setMappingData(prev => {
+            const updated = prev.convenios.map(c =>
+                c.id_convenio === id_convenio
+                    ? { ...c, [field]: field === 'prazo_pei_dias' ? parseInt(value) : value }
+                    : c
+            );
+            return { ...prev, convenios: updated };
+        });
+    };
+
+    const handleSaveConvConfig = async (conv) => {
+        setSaving(true);
+        setError('');
+        setSuccessMsg('');
+        try {
+            await api.put(`/convenios/${conv.id_convenio}`, {
+                prazo_pei_dias: conv.prazo_pei_dias || 180,
+                guias_multiprestador: !!conv.guias_multiprestador
+            });
+            setSuccessMsg(`Configurações do convênio "${conv.nome}" salvas com sucesso!`);
+            setTimeout(() => setSuccessMsg(''), 4000);
+        } catch (err) {
+            setError('Erro ao salvar configuração do convênio: ' + (err.response?.data?.detail || err.message));
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleCreateRelacao = async (e) => {
         e.preventDefault();
         if (!newConvForm.id_convenio || !newConvForm.id_integrador) {
@@ -615,6 +646,56 @@ export default function GestaoConvenios() {
                                                 title="Desvincular integrador deste convênio"
                                             >
                                                 <Trash2 size={13} /> Desvincular
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {/* Configurações do Convênio: Prazo PEI + Guias Multiprestador */}
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/40 border border-slate-800/60 rounded-lg px-4 py-3">
+                                        <div className="flex items-center gap-3 flex-wrap">
+                                            <label className="text-xs font-semibold text-slate-400 whitespace-nowrap" title="Prazo de validade do PEI (data de autorização + prazo). Afeta também o corte de paginação da consulta no portal.">
+                                                Prazo PEI (dias):
+                                            </label>
+                                            <select
+                                                value={conv.prazo_pei_dias || 180}
+                                                onChange={(e) => handleConvConfigChange(conv.id_convenio, 'prazo_pei_dias', e.target.value)}
+                                                disabled={!conv.pei_automatico}
+                                                className={`bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 font-medium ${!conv.pei_automatico ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                                title={conv.pei_automatico ? 'Selecione o prazo em dias' : 'PEI automático desabilitado para este convênio'}
+                                            >
+                                                {PRAZO_PEI_OPTIONS.map(d => (
+                                                    <option key={d} value={d}>{d} dias</option>
+                                                ))}
+                                            </select>
+                                            {!conv.pei_automatico && (
+                                                <span className="text-[10px] text-slate-500 italic">PEI automático desativado</span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-3">
+                                            <label
+                                                className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 cursor-pointer select-none"
+                                                title="Ativo: saldo da guia compartilhado entre prestadores com vínculo de carteirinha (ex. Unimed Goiânia). Desativo: guia restrita ao cod_prestador de origem (ex. IPASGO)."
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!conv.guias_multiprestador}
+                                                    onChange={(e) => handleConvConfigChange(conv.id_convenio, 'guias_multiprestador', e.target.checked)}
+                                                    className="rounded border-slate-700 text-indigo-600 focus:ring-0 bg-slate-900 w-4 h-4 cursor-pointer"
+                                                />
+                                                <span className={conv.guias_multiprestador ? 'text-indigo-300' : ''}>
+                                                    Guias Multiprestador {conv.guias_multiprestador ? '(saldo compartilhado)' : '(restrito ao cod_prestador)'}
+                                                </span>
+                                            </label>
+
+                                            <Button
+                                                size="sm"
+                                                variant="primary"
+                                                onClick={() => handleSaveConvConfig(conv)}
+                                                disabled={saving}
+                                                className="text-xs py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 flex items-center gap-1"
+                                            >
+                                                <Check size={14} /> Salvar Config
                                             </Button>
                                         </div>
                                     </div>

@@ -38,6 +38,12 @@ const Login = () => {
             if (worker_key) localStorage.setItem('worker_key', worker_key);
             if (prefixo_identificacao) localStorage.setItem('prefixo_identificacao', prefixo_identificacao);
 
+            // Capabilities do tenant (integradores de agendamento habilitados) — usadas
+            // pelo gating de botões de OPs; busca fire-and-forget com cache local.
+            api.get('/integradores/meus')
+                .then(res => localStorage.setItem('meus_integradores', JSON.stringify(res.data || [])))
+                .catch(() => localStorage.setItem('meus_integradores', '[]'));
+
             // Redirect
             navigate('/');
         } catch (err) {

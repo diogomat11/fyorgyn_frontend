@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { 
-    Layers, Cpu, Server, Key, Plus, Trash2, Loader2, Check, AlertCircle, Edit3, RefreshCw, Sliders, ChevronDown, ChevronUp, Zap, Hand, Settings
+import {
+    Layers, Cpu, Server, Key, Plus, Trash2, Loader2, Check, AlertCircle, Edit3, RefreshCw, Sliders, ChevronDown, ChevronUp, Zap, Hand, Settings, X, CalendarClock, Play
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -22,6 +22,7 @@ const parseJsonArray = (val) => {
 export default function GestaoIntegradores() {
     const [integradores, setIntegradores] = useState([]);
     const [workerKeys, setWorkerKeys] = useState([]);
+    const [crons, setCrons] = useState([]);
     const [config, setConfig] = useState({ max_servers: 7, dispatch_stagger_seconds: 15 });
     const [users, setUsers] = useState([]);
     const [convenios, setConvenios] = useState([]);
@@ -153,12 +154,13 @@ export default function GestaoIntegradores() {
         setLoading(true);
         setError('');
         try {
-            const [ingRes, wkRes, cfgRes, usrRes, convRes] = await Promise.all([
+            const [ingRes, wkRes, cfgRes, usrRes, convRes, cronRes] = await Promise.all([
                 api.get('/integradores/'),
                 api.get('/integradores/worker-keys').catch(() => ({ data: [] })),
                 api.get('/integradores/config').catch(() => ({ data: { max_servers: 7, dispatch_stagger_seconds: 15 } })),
                 api.get('/auth/admin/users').catch(() => api.get('/auth/users')).catch(() => ({ data: [] })),
-                api.get('/convenios/').catch(() => ({ data: [] }))
+                api.get('/convenios/').catch(() => ({ data: [] })),
+                api.get('/crons').catch(() => ({ data: [] }))
             ]);
 
             setIntegradores(ingRes.data || []);
@@ -168,6 +170,7 @@ export default function GestaoIntegradores() {
                 priority_rules: parseJsonArray(k.priority_rules)
             }));
             setWorkerKeys(normalizedKeys);
+            setCrons(cronRes.data || []);
             setConfig(cfgRes.data || { max_servers: 7, dispatch_stagger_seconds: 15 });
             setUsers(usrRes.data || []);
             setConvenios(convRes.data || []);
@@ -322,14 +325,11 @@ export default function GestaoIntegradores() {
                 descricao: editWorkerForm.descricao,
                 ativo: editWorkerForm.ativo
             });
-            setEditModalSuccess('Configurações do worker salvas com sucesso!');
             setSuccessMsg('Worker atualizado com sucesso!');
             await loadData();
             setActiveTab('workers');
-            setTimeout(() => {
-                setShowEditWorkerModal(false);
-                setEditModalSuccess('');
-            }, 1000);
+            setShowEditWorkerModal(false);
+            setEditModalSuccess('');
         } catch (err) {
             const msg = err.response?.data?.detail || err.message || 'Erro ao atualizar worker';
             setEditModalError(msg);
@@ -338,11 +338,52 @@ export default function GestaoIntegradores() {
         }
     };
 
+    // ── Handlers do Painel de Agendamentos (Cron) ──
+    const handleCronFieldChange = (cronId, field, value) => {
+        setCrons(prev => prev.map(c => c.id === cronId ? { ...c, [field]: value } : c));
+    };
+
+    const handleSaveCron = async (cron) => {
+        setSaving(true);
+        setError('');
+        setSuccessMsg('');
+        try {
+            await api.put(`/crons/${cron.id}`, {
+                enabled: !!cron.enabled,
+                horario: cron.horario || '23:01',
+                rotina: cron.rotina
+            });
+            setSuccessMsg(`Agendamento do integrador "${cron.nome_integrador}" salvo com sucesso!`);
+            setTimeout(() => setSuccessMsg(''), 4000);
+            await loadData();
+        } catch (err) {
+            setError('Erro ao salvar agendamento: ' + (err.response?.data?.detail || err.message));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleRunCronNow = async (cron) => {
+        if (!window.confirm(`Executar AGORA o job ${cron.rotina} para todas as carteirinhas ativas do integrador "${cron.nome_integrador}"?`)) return;
+        setSaving(true);
+        setError('');
+        setSuccessMsg('');
+        try {
+            const res = await api.post(`/crons/${cron.id}/run-now`);
+            setSuccessMsg(`Cron executado: ${res.data?.jobs_criados ?? 0} jobs criados (${res.data?.carteirinhas ?? 0} carteirinhas, ${res.data?.grupos_pulados_sem_credencial ?? 0} grupos pulados).`);
+            setTimeout(() => setSuccessMsg(''), 6000);
+            await loadData();
+        } catch (err) {
+            setError('Erro ao executar cron: ' + (err.response?.data?.detail || err.message));
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleDeleteWorker = async (id) => {
         if (!window.confirm('Tem certeza que deseja remover este worker?')) return;
         try {
-            await api.delete(`/integradores/worker-keys/${id}`);
-            setSuccessMsg('Worker removido com sucesso!');
+            await api.delete(`/integradores/worker-keys/${id}`);            setSuccessMsg('Worker removido com sucesso!');
             loadData();
         } catch (err) {
             setError('Erro ao remover worker');
@@ -438,6 +479,17 @@ export default function GestaoIntegradores() {
                     }`}
                 >
                     <Server size={18} /> Scaling, Workers & Prioridades ({workerKeys.length})
+                </button>
+
+                <button
+                    onClick={() => setActiveTab('crons')}
+                    className={`pb-3 px-3 text-sm font-semibold flex items-center gap-2 transition-colors border-b-2 ${
+                        activeTab === 'crons'
+                            ? 'border-indigo-500 text-indigo-300 font-bold'
+                            : 'border-transparent text-slate-400 hover:text-slate-200'
+                    }`}
+                >
+                    <CalendarClock size={18} /> Agendamentos / Cron ({crons.length})
                 </button>
             </div>
 
@@ -766,6 +818,97 @@ export default function GestaoIntegradores() {
                             </table>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* TAB 3: AGENDAMENTOS / CRON */}
+            {activeTab === 'crons' && (
+                <div className="space-y-4">
+                    <Card className="p-4 bg-slate-900/60 border-slate-800">
+                        <p className="text-xs text-slate-400">
+                            Agendamento diário que cria jobs da rotina configurada para <strong className="text-slate-200">todas as carteirinhas ativas</strong> dos convênios do integrador.
+                            Executa no horário definido (fuso de Brasília por padrão) com guarda de execução no banco — não duplica após restart, e executa em atraso se o servidor estava fora do ar.
+                        </p>
+                    </Card>
+
+                    {loading ? (
+                        <div className="p-12 flex justify-center items-center text-slate-400 gap-3">
+                            <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                            <span>Carregando agendamentos...</span>
+                        </div>
+                    ) : crons.length === 0 ? (
+                        <Card className="p-8 text-center text-slate-500">
+                            Nenhum agendamento configurado (insira um registro em <code className="text-slate-300">cron_configs</code> ou via API <code className="text-slate-300">PUT /api/crons</code>).
+                        </Card>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-4">
+                            {crons.map(cron => (
+                                <Card key={cron.id} className="p-5 border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-all space-y-4">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-3">
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-mono text-xs px-2.5 py-1 rounded bg-slate-800 text-indigo-400 font-bold">
+                                                Integrador #{cron.id_integrador}
+                                            </span>
+                                            <h3 className="font-bold text-lg text-white">{cron.nome_integrador}</h3>
+                                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${cron.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
+                                                {cron.enabled ? 'Habilitado' : 'Desabilitado'}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex items-center gap-3 flex-wrap">
+                                            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!cron.enabled}
+                                                    onChange={(e) => handleCronFieldChange(cron.id, 'enabled', e.target.checked)}
+                                                    className="rounded border-slate-700 text-indigo-600 focus:ring-0 bg-slate-900 w-4 h-4 cursor-pointer"
+                                                />
+                                                Ativo
+                                            </label>
+
+                                            <label className="text-xs font-semibold text-slate-400 flex items-center gap-2">
+                                                Horário:
+                                                <input
+                                                    type="time"
+                                                    value={cron.horario || '23:01'}
+                                                    onChange={(e) => handleCronFieldChange(cron.id, 'horario', e.target.value)}
+                                                    className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                                                />
+                                            </label>
+
+                                            <span className="text-[11px] text-slate-500">Rotina: <code className="text-slate-300">{cron.rotina}</code></span>
+
+                                            <Button
+                                                size="sm"
+                                                variant="primary"
+                                                onClick={() => handleSaveCron(cron)}
+                                                disabled={saving}
+                                                className="text-xs py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 flex items-center gap-1"
+                                            >
+                                                <Check size={14} /> Salvar
+                                            </Button>
+
+                                            <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                onClick={() => handleRunCronNow(cron)}
+                                                disabled={saving}
+                                                className="text-xs py-1.5 px-3 flex items-center gap-1 border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                                                title="Dispara o cron imediatamente, independente do horário"
+                                            >
+                                                <Play size={14} /> Executar Agora
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-4 text-xs text-slate-400">
+                                        <span>Fuso: <strong className="text-slate-200">{cron.fuso}</strong></span>
+                                        <span>Última execução: <strong className="text-slate-200">{cron.ultimo_run ? new Date(cron.ultimo_run + 'T12:00:00').toLocaleDateString('pt-BR') : 'nunca'}</strong></span>
+                                    </div>
+                                </Card>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
