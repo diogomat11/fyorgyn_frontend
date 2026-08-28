@@ -131,13 +131,14 @@ export default function PipelineAgendamentos() {
         loadData();
     }, [page, pageSize, filters, activeTab]);
 
-    // Polling effect: while any agendamento is being processed, re-fetch every 3s to await Webhook
+    // Polling effect: while any agendamento is being processed, re-fetch to await Webhook.
+    // 5s (antes 3s): cada poll é uma query no banco — suaviza o tráfego sem perder UX.
     const isAnyItemProcessing = agendamentos.some(a => a.execucao_status === 'processando' || processingIds.includes(a.id_agendamento));
     useEffect(() => {
         if (!isAnyItemProcessing) return;
         const interval = setInterval(() => {
             loadData();
-        }, 3000);
+        }, 5000);
         return () => clearInterval(interval);
     }, [isAnyItemProcessing, page, pageSize, filters, activeTab]);
 
