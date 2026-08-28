@@ -853,6 +853,16 @@ export default function GestaoIntegradores() {
                                             <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${cron.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                                                 {cron.enabled ? 'Habilitado' : 'Desabilitado'}
                                             </span>
+                                            {(cron.jobs_pendentes > 0 || cron.jobs_pendentes_antigos > 0) && (
+                                                <span
+                                                    className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${cron.jobs_pendentes_antigos > 0 ? 'bg-red-500/10 text-red-400 border border-red-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}`}
+                                                    title="Jobs do cron ainda não processados pela frota. Pendentes há mais de 24h são apagados automaticamente pela retenção."
+                                                >
+                                                    {cron.jobs_pendentes_antigos > 0
+                                                        ? `${cron.jobs_pendentes_antigos} pendente(s) > 24h (serão apagados)`
+                                                        : `${cron.jobs_pendentes} pendente(s)`}
+                                                </span>
+                                            )}
                                         </div>
 
                                         <div className="flex items-center gap-3 flex-wrap">
