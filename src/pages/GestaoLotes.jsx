@@ -10,8 +10,11 @@ export default function GestaoLotes() {
     
     // Modal Novo Lote
     const [showNovoModal, setShowNovoModal] = useState(false);
-    const [novoLoteForm, setNovoLoteForm] = useState({ data_fim: '', cod_prestador: '' });
+    const [novoLoteForm, setNovoLoteForm] = useState({ data_ini: '', data_fim: '', cod_prestador: '' });
     const [autoEnvio, setAutoEnvio] = useState(false);
+    // Strategy de lote do convênio: {tipo_formulario: 'periodo'|'numero',
+    // lote_periodo_tipo, auto_periodo:{data_ini,data_fim}|null}
+    const [formConfig, setFormConfig] = useState(null);
     
     const [showItensModal, setShowItensModal] = useState(false);
     const [selectedLote, setSelectedLote] = useState(null);
@@ -43,10 +46,32 @@ export default function GestaoLotes() {
     useEffect(() => {
         if (selectedConvenio) {
             loadLotes();
+            loadFormConfig();
         } else {
             setLotes([]);
+            setFormConfig(null);
         }
     }, [selectedConvenio]);
+
+    // Strategy de criação de lote do convênio (número IPASGO × período Unimed)
+    const loadFormConfig = async () => {
+        try {
+            const res = await api.get('/lotes/form-config', { params: { id_convenio: selectedConvenio } });
+            const cfg = res.data;
+            setFormConfig(cfg);
+            // Auto-preenche o período da janela corrente (ex.: mensal fixo 18→17)
+            if (cfg?.tipo_formulario === 'periodo' && cfg?.auto_periodo) {
+                const brToIso = (s) => s.split('/').reverse().join('-');
+                setNovoLoteForm((f) => ({
+                    ...f,
+                    data_ini: f.data_ini || brToIso(cfg.auto_periodo.data_ini),
+                    data_fim: f.data_fim || brToIso(cfg.auto_periodo.data_fim),
+                }));
+            }
+        } catch (e) {
+            setFormConfig(null);
+        }
+    };
 
     // Auto-polling: every 60s when there are lotes in transitional states
     useEffect(() => {
@@ -99,14 +124,17 @@ export default function GestaoLotes() {
 
     const handleCriarLote = async (e) => {
         e.preventDefault();
+        const isPeriodo = formConfig?.tipo_formulario === 'periodo';
         try {
-            await api.post('/lotes/', {
+            const payload = {
                 id_convenio: parseInt(selectedConvenio),
                 cod_prestador: novoLoteForm.cod_prestador,
                 data_fim: novoLoteForm.data_fim
-            });
+            };
+            if (isPeriodo) payload.data_inicio = novoLoteForm.data_ini || null;
+            await api.post('/lotes/', payload);
             setShowNovoModal(false);
-            setNovoLoteForm({ data_fim: '', cod_prestador: '' });
+            setNovoLoteForm({ data_ini: '', data_fim: '', cod_prestador: '' });
             loadLotes(); // Triggers auto-polling via the useEffect above
         } catch (error) {
             alert(error.response?.data?.detail || "Erro ao criar lote");
@@ -342,7 +370,7 @@ export default function GestaoLotes() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold text-slate-100">Gestão de Lotes de Faturamento</h1>
-                        <p className="text-sm text-slate-400">Crie, cancele e analise lotes de faturamento do IPASGO.</p>
+                        <p className="text-sm text-slate-400">Crie, cancele e analise lotes de faturamento por convênio.</p>
                     </div>
                 </div>
                 
@@ -359,7 +387,18 @@ export default function GestaoLotes() {
                     </select>
 
                     <button
-                        onClick={() => setShowNovoModal(true)}
+                        onClick={() => {
+                            // Pré-preenche a janela corrente (mensal fixo, ex. 18→17)
+                            if (formConfig?.tipo_formulario === 'periodo' && formConfig?.auto_periodo) {
+                                const brToIso = (s) => s.split('/').reverse().join('-');
+                                setNovoLoteForm((f) => ({
+                                    ...f,
+                                    data_ini: formConfig.auto_periodo.data_ini ? brToIso(formConfig.auto_periodo.data_ini) : f.data_ini,
+                                    data_fim: formConfig.auto_periodo.data_fim ? brToIso(formConfig.auto_periodo.data_fim) : f.data_fim,
+                                }));
+                            }
+                            setShowNovoModal(true);
+                        }}
                         disabled={!selectedConvenio}
                         className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 text-sm font-medium"
                     >
@@ -385,7 +424,7 @@ export default function GestaoLotes() {
                                 <th className="px-6 py-4">Número Lote</th>
                                 <th className="px-6 py-4">Prestador</th>
                                 <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Data Fim</th>
+                                <th className="px-6 py-4">Período</th>
                                 <th className="px-6 py-4 text-right">Ações</th>
                             </tr>
                         </thead>
@@ -416,7 +455,11 @@ export default function GestaoLotes() {
                                             {lote.status}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4">{lote.data_fim ? lote.data_fim.split('T')[0].split('-').reverse().join('/') : '-'}</td>
+                                    <td className="px-6 py-4">
+                                        {lote.data_inicio
+                                            ? `${lote.data_inicio.split('T')[0].split('-').reverse().join('/')} a ${lote.data_fim ? lote.data_fim.split('T')[0].split('-').reverse().join('/') : '-'}`
+                                            : (lote.data_fim ? lote.data_fim.split('T')[0].split('-').reverse().join('/') : '-')}
+                                    </td>
                                     <td className="px-6 py-4 text-right flex justify-end gap-2">
                                         <button 
                                             onClick={() => handleVerItens(lote)}
@@ -452,10 +495,16 @@ export default function GestaoLotes() {
                             </button>
                         </div>
                         <form onSubmit={handleCriarLote} className="p-6 space-y-4">
+                            {formConfig?.tipo_formulario === 'periodo' && formConfig?.lote_periodo_tipo === 'mensal_fixo' && (
+                                <div className="text-xs text-slate-400 bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-2">
+                                    Período mensal fixo: dia {formConfig.lote_dia_inicio} a {formConfig.lote_dia_fim}.
+                                    A janela corrente é pré-preenchida (ajustável).
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-slate-300 mb-1">Código Prestador</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     required
                                     value={novoLoteForm.cod_prestador}
                                     onChange={(e) => setNovoLoteForm({...novoLoteForm, cod_prestador: e.target.value})}
@@ -463,16 +512,47 @@ export default function GestaoLotes() {
                                     placeholder="Ex: 00632-2"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1">Data Fim da Competência</label>
-                                <input 
-                                    type="date" 
-                                    required
-                                    value={novoLoteForm.data_fim}
-                                    onChange={(e) => setNovoLoteForm({...novoLoteForm, data_fim: e.target.value})}
-                                    className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg focus:ring-primary focus:border-primary px-3 py-2 text-sm"
-                                />
-                            </div>
+                            {formConfig?.tipo_formulario === 'periodo' ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-300 mb-1">Início do Lote</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={novoLoteForm.data_ini}
+                                            onChange={(e) => setNovoLoteForm({...novoLoteForm, data_ini: e.target.value})}
+                                            className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg focus:ring-primary focus:border-primary px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-300 mb-1">Fim do Lote</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={novoLoteForm.data_fim}
+                                            onChange={(e) => setNovoLoteForm({...novoLoteForm, data_fim: e.target.value})}
+                                            className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg focus:ring-primary focus:border-primary px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">Data Fim da Competência</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        value={novoLoteForm.data_fim}
+                                        onChange={(e) => setNovoLoteForm({...novoLoteForm, data_fim: e.target.value})}
+                                        className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg focus:ring-primary focus:border-primary px-3 py-2 text-sm"
+                                    />
+                                </div>
+                            )}
+                            {formConfig?.tipo_formulario === 'periodo' && (
+                                <p className="text-xs text-slate-500">
+                                    Todos os itens do filtro da OP4 no período serão vinculados a este lote,
+                                    mesmo sessões com data anterior ao início.
+                                </p>
+                            )}
                             <div className="pt-4 flex justify-end gap-3 border-t border-slate-800 mt-6">
                                 <button type="button" onClick={() => setShowNovoModal(false)} className="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 rounded-lg">Cancelar</button>
                                 <button type="submit" className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark">Criar Lote</button>

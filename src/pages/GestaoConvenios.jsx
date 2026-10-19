@@ -215,9 +215,10 @@ export default function GestaoConvenios() {
 
     const handleConvConfigChange = (id_convenio, field, value) => {
         setMappingData(prev => {
+            const numeric = ['prazo_pei_dias', 'lote_dia_inicio', 'lote_dia_fim'].includes(field);
             const updated = prev.convenios.map(c =>
                 c.id_convenio === id_convenio
-                    ? { ...c, [field]: field === 'prazo_pei_dias' ? parseInt(value) : value }
+                    ? { ...c, [field]: numeric ? (value === '' || value === null ? null : parseInt(value)) : value }
                     : c
             );
             return { ...prev, convenios: updated };
@@ -229,9 +230,17 @@ export default function GestaoConvenios() {
         setError('');
         setSuccessMsg('');
         try {
+            if (conv.lote_periodo_tipo === 'mensal_fixo' && (!conv.lote_dia_inicio || !conv.lote_dia_fim)) {
+                alert('Período mensal fixo exige dia de início e dia de fim (1-31).');
+                setSaving(false);
+                return;
+            }
             await api.put(`/convenios/${conv.id_convenio}`, {
                 prazo_pei_dias: conv.prazo_pei_dias || 180,
-                guias_multiprestador: !!conv.guias_multiprestador
+                guias_multiprestador: !!conv.guias_multiprestador,
+                lote_periodo_tipo: conv.lote_periodo_tipo || null,
+                lote_dia_inicio: conv.lote_dia_inicio || null,
+                lote_dia_fim: conv.lote_dia_fim || null
             });
             setSuccessMsg(`Configurações do convênio "${conv.nome}" salvas com sucesso!`);
             setTimeout(() => setSuccessMsg(''), 4000);
@@ -669,6 +678,45 @@ export default function GestaoConvenios() {
                                             </select>
                                             {!conv.pei_automatico && (
                                                 <span className="text-[10px] text-slate-500 italic">PEI automático desativado</span>
+                                            )}
+                                        </div>
+
+                                        {/* Período do Lote (plano lote_strategy): mensal fixo / livre / legado */}
+                                        <div className="flex items-center gap-3 flex-wrap">
+                                            <label
+                                                className="text-xs font-semibold text-slate-400 whitespace-nowrap"
+                                                title="Como o período do lote é definido na criação: Mensal fixo (janela dia X→Y, ex. 18→17) ou Livre (usuário escolhe as datas). Vazio mantém o formato legado do convênio."
+                                            >
+                                                Período do Lote:
+                                            </label>
+                                            <select
+                                                value={conv.lote_periodo_tipo || ''}
+                                                onChange={(e) => handleConvConfigChange(conv.id_convenio, 'lote_periodo_tipo', e.target.value || null)}
+                                                className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 font-medium"
+                                            >
+                                                <option value="">— (formato legado) —</option>
+                                                <option value="mensal_fixo">Mensal fixo (dia X → dia Y)</option>
+                                                <option value="livre">Livre</option>
+                                            </select>
+                                            {conv.lote_periodo_tipo === 'mensal_fixo' && (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number" min="1" max="31" placeholder="ini"
+                                                        value={conv.lote_dia_inicio || ''}
+                                                        onChange={(e) => handleConvConfigChange(conv.id_convenio, 'lote_dia_inicio', e.target.value)}
+                                                        className="w-16 bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                                        title="Dia do mês de início da janela"
+                                                    />
+                                                    <span className="text-slate-500 text-xs">até</span>
+                                                    <input
+                                                        type="number" min="1" max="31" placeholder="fim"
+                                                        value={conv.lote_dia_fim || ''}
+                                                        onChange={(e) => handleConvConfigChange(conv.id_convenio, 'lote_dia_fim', e.target.value)}
+                                                        className="w-16 bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                                        title="Dia do mês de fim da janela"
+                                                    />
+                                                    <span className="text-[10px] text-slate-500 italic">ex.: 18 até 17 (janela que cruza o mês)</span>
+                                                </div>
                                             )}
                                         </div>
 
