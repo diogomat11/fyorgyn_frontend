@@ -142,13 +142,19 @@ export default function GestaoLotes() {
     };
 
     const handleCancelarLote = async (lote) => {
-        if (!window.confirm(`Tem certeza que deseja cancelar o Lote ${lote.numero_lote || lote.id_lote}?`)) return;
-        
+        // Cancelamento local (lote de período/Unimed) × via portal (lote de número/IPASGO)
+        const isLocal = formConfig?.tipo_formulario === 'periodo';
+        const detalhe = isLocal
+            ? 'cancelamento LOCAL: itens serão bloqueados e conciliações revertidas (nenhum job no portal)'
+            : 'será enviado o cancelamento ao portal do convênio (job OP14)';
+        if (!window.confirm(`Tem certeza que deseja cancelar o Lote ${lote.numero_lote || lote.id_lote}?\n\nEsta ação ${detalhe}.`)) return;
+
         try {
-            await api.post(`/lotes/${lote.id_lote}/cancelar`, {
+            const res = await api.post(`/lotes/${lote.id_lote}/cancelar`, {
                 cod_prestador: lote.cod_prestador
             });
-            alert("Solicitação de cancelamento enviada (Job OP14).");
+            // A mensagem vem do backend: local ("Lote cancelado localmente...") × portal
+            alert(res.data?.message || "Cancelamento processado.");
             loadLotes();
         } catch (error) {
             alert(error.response?.data?.detail || "Erro ao cancelar lote");
