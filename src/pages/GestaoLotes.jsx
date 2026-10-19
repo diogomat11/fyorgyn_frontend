@@ -307,7 +307,37 @@ export default function GestaoLotes() {
     };
 
     const handleSyncItens = async () => {
-        if (!selectedLote || !selectedLote.numero_lote) {
+        if (!selectedLote) return;
+
+        // Lote por PERÍODO (Unimed): sincronizar = criar job OP4 com o intervalo
+        // do lote. O backend valida que o intervalo permeia apenas este lote e
+        // vincula o job a ele (itens chegam em chunks pelo pipeline parcial).
+        if (selectedLote.data_inicio) {
+            const isoToBr = (s) => (s || '').split('T')[0].split('-').reverse().join('/');
+            const dataIni = isoToBr(selectedLote.data_inicio);
+            const dataFim = isoToBr(selectedLote.data_fim);
+            if (!dataIni || !dataFim) {
+                alert('Lote sem período definido.');
+                return;
+            }
+            try {
+                await api.post('/jobs/', {
+                    type: 'single',
+                    id_convenio: parseInt(selectedConvenio),
+                    rotina: '4',
+                    params: JSON.stringify({ data_ini: dataIni, data_fim: dataFim, guia: '' })
+                });
+                alert(`Importação OP4 enviada para o lote (período ${dataIni} a ${dataFim}). As guias chegam em blocos conforme a extração.`);
+                setShowItensModal(false);
+                loadLotes();
+            } catch (error) {
+                alert(error.response?.data?.detail || 'Erro ao solicitar importação OP4.');
+            }
+            return;
+        }
+
+        // Formato NÚMERO (IPASGO): mantém o fluxo OP6 atual
+        if (!selectedLote.numero_lote) {
              alert("Lote ainda não possui número oficial. Aguarde a criação.");
              return;
         }
@@ -549,8 +579,10 @@ export default function GestaoLotes() {
                             )}
                             {formConfig?.tipo_formulario === 'periodo' && (
                                 <p className="text-xs text-slate-500">
-                                    Todos os itens do filtro da OP4 no período serão vinculados a este lote,
-                                    mesmo sessões com data anterior ao início.
+                                    O lote é criado vazio — o job de importação (OP4) nasce ao clicar em
+                                    <strong> Sincronizar</strong> no lote (usa o intervalo do lote) ou pelo módulo
+                                    Importações. Todos os itens do filtro serão vinculados ao lote, mesmo sessões
+                                    com data anterior ao início.
                                 </p>
                             )}
                             <div className="pt-4 flex justify-end gap-3 border-t border-slate-800 mt-6">
@@ -604,13 +636,15 @@ export default function GestaoLotes() {
                                     )}
                                     {conferindoTodos ? 'Conferindo...' : `Conferir todos (${filteredItens.filter(i => i.StatusConferencia !== 67).length})`}
                                 </button>
-                                <button 
+                                <button
                                     onClick={handleSyncItens}
-                                    disabled={!selectedLote.numero_lote}
+                                    disabled={selectedLote.data_inicio ? false : !selectedLote.numero_lote}
                                     className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 rounded border border-indigo-500/30 text-xs transition-colors disabled:opacity-50"
-                                    title="Dispara Job OP6 no Worker"
+                                    title={selectedLote.data_inicio
+                                        ? 'Cria Job OP4 com o intervalo (período) deste lote — as guias chegam em blocos'
+                                        : 'Dispara Job OP6 no Worker'}
                                 >
-                                    <RefreshCw size={14} /> Sincronizar (OP6)
+                                    <RefreshCw size={14} /> Sincronizar ({selectedLote.data_inicio ? 'OP4' : 'OP6'})
                                 </button>
                                 <button onClick={() => setShowItensModal(false)} className="text-slate-400 hover:text-white p-1">
                                     <X size={20} />
