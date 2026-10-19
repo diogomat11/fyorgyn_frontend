@@ -306,16 +306,19 @@ export default function GestaoLotes() {
         }
     };
 
-    const handleSyncItens = async () => {
-        if (!selectedLote) return;
+    // Sincronização de UM lote: por PERÍODO (Unimed) cria job OP4 com o
+    // intervalo do lote (backend valida e vincula); por NÚMERO (IPASGO)
+    // mantém o fluxo OP6. Usado pelo ícone da linha e pelo modal de itens.
+    const handleSyncLote = async (lote) => {
+        if (!lote) return;
 
         // Lote por PERÍODO (Unimed): sincronizar = criar job OP4 com o intervalo
         // do lote. O backend valida que o intervalo permeia apenas este lote e
         // vincula o job a ele (itens chegam em chunks pelo pipeline parcial).
-        if (selectedLote.data_inicio) {
+        if (lote.data_inicio) {
             const isoToBr = (s) => (s || '').split('T')[0].split('-').reverse().join('/');
-            const dataIni = isoToBr(selectedLote.data_inicio);
-            const dataFim = isoToBr(selectedLote.data_fim);
+            const dataIni = isoToBr(lote.data_inicio);
+            const dataFim = isoToBr(lote.data_fim);
             if (!dataIni || !dataFim) {
                 alert('Lote sem período definido.');
                 return;
@@ -327,8 +330,7 @@ export default function GestaoLotes() {
                     rotina: '4',
                     params: JSON.stringify({ data_ini: dataIni, data_fim: dataFim, guia: '' })
                 });
-                alert(`Importação OP4 enviada para o lote (período ${dataIni} a ${dataFim}). As guias chegam em blocos conforme a extração.`);
-                setShowItensModal(false);
+                alert(`Importação OP4 enviada para o lote Nº ${lote.id_lote} (período ${dataIni} a ${dataFim}). As guias chegam em blocos conforme a extração.`);
                 loadLotes();
             } catch (error) {
                 alert(error.response?.data?.detail || 'Erro ao solicitar importação OP4.');
@@ -337,7 +339,7 @@ export default function GestaoLotes() {
         }
 
         // Formato NÚMERO (IPASGO): mantém o fluxo OP6 atual
-        if (!selectedLote.numero_lote) {
+        if (!lote.numero_lote) {
              alert("Lote ainda não possui número oficial. Aguarde a criação.");
              return;
         }
@@ -348,15 +350,20 @@ export default function GestaoLotes() {
                   id_convenio: parseInt(selectedConvenio),
                   rotina: '6',
                   params: JSON.stringify({
-                       numero_lote: selectedLote.numero_lote,
-                       codigoPrestador: selectedLote.cod_prestador
+                       numero_lote: lote.numero_lote,
+                       codigoPrestador: lote.cod_prestador
                   })
              });
              alert("Solicitação de atualização de itens enviada (Job OP6).");
-             setShowItensModal(false);
+             loadLotes();
         } catch (error) {
              alert("Erro ao solicitar atualização.");
         }
+    };
+
+    const handleSyncItens = async () => {
+        await handleSyncLote(selectedLote);
+        setShowItensModal(false);
     };
 
     const handleConferirTodos = async () => {
@@ -491,13 +498,23 @@ export default function GestaoLotes() {
                                             : (lote.data_fim ? lote.data_fim.split('T')[0].split('-').reverse().join('/') : '-')}
                                     </td>
                                     <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                        <button 
+                                        <button
+                                            onClick={() => handleSyncLote(lote)}
+                                            disabled={!(lote.data_inicio || lote.numero_lote) || ['Cancelado', 'Cancelando'].includes(lote.status)}
+                                            className="px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                            title={lote.data_inicio
+                                                ? `Sincronizar este lote: cria Job OP4 com o período ${lote.data_inicio?.split('T')[0].split('-').reverse().join('/')} a ${lote.data_fim?.split('T')[0].split('-').reverse().join('/')}`
+                                                : 'Sincronizar este lote: cria Job OP6 (atualização de itens no portal)'}
+                                        >
+                                            <RefreshCw size={14} /> {lote.data_inicio ? 'OP4' : 'OP6'}
+                                        </button>
+                                        <button
                                             onClick={() => handleVerItens(lote)}
                                             className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs transition-colors flex items-center gap-1"
                                         >
                                             <Search size={14} /> Itens
                                         </button>
-                                        <button 
+                                        <button
                                             onClick={() => handleCancelarLote(lote)}
                                             disabled={lote.status === 'Cancelado' || lote.status === 'Cancelando'}
                                             className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
