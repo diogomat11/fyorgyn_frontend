@@ -306,16 +306,22 @@ export default function GestaoLotes() {
         }
     };
 
-    // Sincronização de UM lote: por PERÍODO (Unimed) cria job OP4 com o
-    // intervalo do lote (backend valida e vincula); por NÚMERO (IPASGO)
-    // mantém o fluxo OP6. Usado pelo ícone da linha e pelo modal de itens.
+    // Sincronização de UM lote (ícone Sincronizar): cria o job correspondente
+    // ao convênio (rotina_sync da strategy — ex. Unimed=4, IPASGO=6), com os
+    // parâmetros DAQUELE lote. Convênios sem rotina de sincronização ficam com
+    // o botão desabilitado.
     const handleSyncLote = async (lote) => {
         if (!lote) return;
+        const rotina = formConfig?.rotina_sync;
+        if (!rotina) {
+            alert('Não há rotina de sincronização configurada para este convênio.');
+            return;
+        }
 
-        // Lote por PERÍODO (Unimed): sincronizar = criar job OP4 com o intervalo
-        // do lote. O backend valida que o intervalo permeia apenas este lote e
-        // vincula o job a ele (itens chegam em chunks pelo pipeline parcial).
-        if (lote.data_inicio) {
+        let params;
+        if (formConfig?.tipo_formulario === 'periodo') {
+            // Lote por PERÍODO (ex. Unimed): job com o intervalo do lote; o
+            // backend valida que o intervalo permeia apenas este lote e o vincula.
             const isoToBr = (s) => (s || '').split('T')[0].split('-').reverse().join('/');
             const dataIni = isoToBr(lote.data_inicio);
             const dataFim = isoToBr(lote.data_fim);
@@ -323,41 +329,27 @@ export default function GestaoLotes() {
                 alert('Lote sem período definido.');
                 return;
             }
-            try {
-                await api.post('/jobs/', {
-                    type: 'single',
-                    id_convenio: parseInt(selectedConvenio),
-                    rotina: '4',
-                    params: JSON.stringify({ data_ini: dataIni, data_fim: dataFim, guia: '' })
-                });
-                alert(`Importação OP4 enviada para o lote Nº ${lote.id_lote} (período ${dataIni} a ${dataFim}). As guias chegam em blocos conforme a extração.`);
-                loadLotes();
-            } catch (error) {
-                alert(error.response?.data?.detail || 'Erro ao solicitar importação OP4.');
+            params = { data_ini: dataIni, data_fim: dataFim, guia: '' };
+        } else {
+            // Lote por NÚMERO (ex. IPASGO): job com o número do lote no portal.
+            if (!lote.numero_lote) {
+                alert("Lote ainda não possui número oficial. Aguarde a criação.");
+                return;
             }
-            return;
+            params = { numero_lote: lote.numero_lote, codigoPrestador: lote.cod_prestador };
         }
 
-        // Formato NÚMERO (IPASGO): mantém o fluxo OP6 atual
-        if (!lote.numero_lote) {
-             alert("Lote ainda não possui número oficial. Aguarde a criação.");
-             return;
-        }
         try {
-             // Create Job OP6
-             await api.post('/jobs/', {
-                  type: 'single',
-                  id_convenio: parseInt(selectedConvenio),
-                  rotina: '6',
-                  params: JSON.stringify({
-                       numero_lote: lote.numero_lote,
-                       codigoPrestador: lote.cod_prestador
-                  })
-             });
-             alert("Solicitação de atualização de itens enviada (Job OP6).");
-             loadLotes();
+            await api.post('/jobs/', {
+                type: 'single',
+                id_convenio: parseInt(selectedConvenio),
+                rotina,
+                params: JSON.stringify(params)
+            });
+            alert('Sincronização solicitada para o lote. Os itens serão atualizados conforme o processamento.');
+            loadLotes();
         } catch (error) {
-             alert("Erro ao solicitar atualização.");
+            alert(error.response?.data?.detail || 'Erro ao solicitar sincronização.');
         }
     };
 
@@ -500,13 +492,20 @@ export default function GestaoLotes() {
                                     <td className="px-6 py-4 text-right flex justify-end gap-2">
                                         <button
                                             onClick={() => handleSyncLote(lote)}
-                                            disabled={!(lote.data_inicio || lote.numero_lote) || ['Cancelado', 'Cancelando'].includes(lote.status)}
-                                            className="px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                            title={lote.data_inicio
-                                                ? `Sincronizar este lote: cria Job OP4 com o período ${lote.data_inicio?.split('T')[0].split('-').reverse().join('/')} a ${lote.data_fim?.split('T')[0].split('-').reverse().join('/')}`
-                                                : 'Sincronizar este lote: cria Job OP6 (atualização de itens no portal)'}
+                                            disabled={!formConfig?.rotina_sync
+                                                || (formConfig?.tipo_formulario === 'periodo' ? !lote.data_inicio : !lote.numero_lote)
+                                                || ['Cancelado', 'Cancelando'].includes(lote.status)}
+                                            className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center"
+                                            title={(() => {
+                                                if (!formConfig?.rotina_sync) return 'Sincronizar — sem rotina de sincronização para este convênio';
+                                                if (formConfig?.tipo_formulario === 'periodo') {
+                                                    const br = (s) => (s || '').split('T')[0].split('-').reverse().join('/');
+                                                    return `Sincronizar — job de importação do período ${br(lote.data_inicio)} a ${br(lote.data_fim)}`;
+                                                }
+                                                return 'Sincronizar — job de atualização dos itens do lote';
+                                            })()}
                                         >
-                                            <RefreshCw size={14} /> {lote.data_inicio ? 'OP4' : 'OP6'}
+                                            <RefreshCw size={15} />
                                         </button>
                                         <button
                                             onClick={() => handleVerItens(lote)}
@@ -655,13 +654,12 @@ export default function GestaoLotes() {
                                 </button>
                                 <button
                                     onClick={handleSyncItens}
-                                    disabled={selectedLote.data_inicio ? false : !selectedLote.numero_lote}
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 rounded border border-indigo-500/30 text-xs transition-colors disabled:opacity-50"
-                                    title={selectedLote.data_inicio
-                                        ? 'Cria Job OP4 com o intervalo (período) deste lote — as guias chegam em blocos'
-                                        : 'Dispara Job OP6 no Worker'}
+                                    disabled={!formConfig?.rotina_sync
+                                        || (formConfig?.tipo_formulario === 'periodo' ? !selectedLote.data_inicio : !selectedLote.numero_lote)}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 rounded border border-indigo-500/30 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Sincronizar — cria o job correspondente a este lote no worker"
                                 >
-                                    <RefreshCw size={14} /> Sincronizar ({selectedLote.data_inicio ? 'OP4' : 'OP6'})
+                                    <RefreshCw size={14} /> Sincronizar
                                 </button>
                                 <button onClick={() => setShowItensModal(false)} className="text-slate-400 hover:text-white p-1">
                                     <X size={20} />
