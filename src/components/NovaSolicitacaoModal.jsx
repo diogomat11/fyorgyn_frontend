@@ -29,6 +29,8 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
         medico_mesmo_profissional: true,
         id_medico: '',
         dataSolicitacao: todayISO,
+        dataAtendimento: todayISO,
+        tabelaCaesan: '22',
         paciente_CID: '',
         tipoAtendimento: 'TERAPIAS',
         cod_prestador: '',
@@ -62,14 +64,16 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
             fetchMedicos();
             
             // Set form taking initialData into account
-            setFormData({ 
-                id_convenio: initialData?.id_convenio || '', 
-                carteirinha_id: initialData?.carteirinha_id || '', 
+            setFormData({
+                id_convenio: initialData?.id_convenio || '',
+                carteirinha_id: initialData?.carteirinha_id || '',
                 observacao: '',
                 id_profissional: '',
                 medico_mesmo_profissional: true,
                 id_medico: '',
                 dataSolicitacao: new Date().toISOString().slice(0, 10),
+                dataAtendimento: new Date().toISOString().slice(0, 10),
+                tabelaCaesan: '22',
                 paciente_CID: '',
                 tipoAtendimento: 'TERAPIAS',
                 cod_prestador: '',
@@ -214,12 +218,14 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                 3: 'op1_consulta',             // Unimed Goiania
                 6: 'op1_autorizar_facplan',    // IPASGO
                 8: 'op1_consulta',             // Sulamerica
-                9: 'op1_consulta'              // Amil
+                9: 'op1_consulta',             // Amil
+                16: 'solicitar_autorizacao'    // CAESAN (strategy direciona ao integrador 102)
             };
 
             const selectedRotina = rotinaMap[formData.id_convenio] || 'op1_solicitar_autorizacao';
 
             const isIpasgo = parseInt(formData.id_convenio) === 6;
+            const isCaesan = parseInt(formData.id_convenio) === 16;
             const selectedCart = carteirinhas.find(c => String(c.id) === String(formData.carteirinha_id));
             const selectedProf = profissionais.find(p => String(p.id_profissional) === String(formData.id_profissional));
             const currentConvenio = convenios.find(c => String(c.id_convenio) === String(formData.id_convenio));
@@ -230,6 +236,9 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
             const formattedDate = formData.dataSolicitacao
                 ? formData.dataSolicitacao.split('-').reverse().join('/')
                 : new Date().toLocaleDateString('pt-BR');
+            const formattedDataAtendimento = formData.dataAtendimento
+                ? formData.dataAtendimento.split('-').reverse().join('/')
+                : formattedDate;
 
             // Obter URL base absoluta do backend para que o worker consiga acessar e baixar os arquivos
             let backendBaseUrl = import.meta.env.VITE_API_URL || '';
@@ -292,6 +301,17 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                     profissional_CBO: selectedProf ? (selectedProf.CBO || '') : '',
                     texto_Justificativa: formData.observacao || '',
                     ...resolvedAttachments,
+
+                    // CAESAN (convênio 16 → integrador 102, via strategy solicitar_autorizacao)
+                    ...(isCaesan ? {
+                        data_atendimento: formattedDataAtendimento,
+                        tabela: formData.tabelaCaesan || '22',
+                        justificativa: formData.observacao || '',
+                        caminho_doc: resolvedAttachments['anexo_RM']
+                            || resolvedAttachments['anexo_RC']
+                            || resolvedAttachments['anexo_AI']
+                            || ''
+                    } : {}),
 
                     // Original/Frontend parameters
                     id_profissional: parseInt(formData.id_profissional),
@@ -418,6 +438,35 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                             />
                         </div>
                     </div>
+
+                    {/* CAESAN: Data Atendimento + Tabela do portal */}
+                    {parseInt(formData.id_convenio) === 16 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary mb-1">
+                                    Data do Atendimento (CAESAN) *
+                                </label>
+                                <Input
+                                    type="date"
+                                    value={formData.dataAtendimento}
+                                    onChange={(e) => setFormData({ ...formData, dataAtendimento: e.target.value })}
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary mb-1">
+                                    Tabela (CAESAN) *
+                                </label>
+                                <Select
+                                    value={formData.tabelaCaesan}
+                                    onChange={(e) => setFormData({ ...formData, tabelaCaesan: e.target.value })}
+                                >
+                                    <option value="22">22 — Terapias Convencionais</option>
+                                    <option value="00">00 — Terapias Especiais</option>
+                                </Select>
+                            </div>
+                        </div>
+                    )}
 
                     {currentConvenio?.registro_ans && (
                         <div className="text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2">
@@ -724,13 +773,13 @@ export default function NovaSolicitacaoModal({ isOpen, onClose, onSuccess, initi
                     {/* Observação / Justificativa */}
                     <div>
                         <label className="block text-sm font-medium text-text-secondary mb-1">
-                            {parseInt(formData.id_convenio) === 6 ? 'Justificativa Clínica' : 'Observação / Justificativa'}
+                            {[6, 16].includes(parseInt(formData.id_convenio)) ? 'Justificativa Clínica' : 'Observação / Justificativa'}
                         </label>
                         <textarea
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all resize-none h-20"
                             value={formData.observacao}
                             onChange={(e) => setFormData({ ...formData, observacao: e.target.value })}
-                            placeholder={parseInt(formData.id_convenio) === 6
+                            placeholder={[6, 16].includes(parseInt(formData.id_convenio))
                                 ? 'Justificativa clínica para autorização...'
                                 : 'Informações adicionais para a solicitação...'}
                         />

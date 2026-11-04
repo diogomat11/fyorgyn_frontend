@@ -36,6 +36,10 @@ export default function GestaoLotes() {
     const [editingDateItemId, setEditingDateItemId] = useState(null);
     const [editingDateValue, setEditingDateValue] = useState('');
 
+    // Protocolo (capa) do lote no novo portal ConferenciaFaturamento (IPASGO)
+    const [protocoloEdit, setProtocoloEdit] = useState({});
+    const [savingProtocolo, setSavingProtocolo] = useState(null);
+
     const pollRef = useRef(null);
 
     useEffect(() => {
@@ -180,11 +184,17 @@ export default function GestaoLotes() {
     };
     
     // Calculos do dashboard de itens
+    const letraParaInt = { A: '67', P: '78', R: '82' };
     const filteredItens = itensLote.filter(item => {
         const matchGuia = item.Guia?.toLowerCase().includes(filtroGuia.toLowerCase()) || !filtroGuia;
         const matchDetalhe = item.detalheId?.toString().includes(filtroDetalhe) || !filtroDetalhe;
         const matchBenef = item.CodigoBeneficiario?.toLowerCase().includes(filtroBeneficiario.toLowerCase()) || !filtroBeneficiario;
-        const matchStatusConf = filtroStatusConf === '' || item.StatusConferencia?.toString() === filtroStatusConf;
+        // Filtro de status: aceita a letra do novo portal (A/P/R/I) ou o inteiro legado
+        const statusComoInt = item.status_conferencia && letraParaInt[item.status_conferencia]
+            ? letraParaInt[item.status_conferencia]
+            : item.StatusConferencia?.toString();
+        const matchStatusConf = filtroStatusConf === ''
+            || (filtroStatusConf === 'I' ? item.status_conferencia === 'I' : statusComoInt === filtroStatusConf);
         return matchGuia && matchDetalhe && matchBenef && matchStatusConf;
     });
 
@@ -233,6 +243,13 @@ export default function GestaoLotes() {
     const totalConciliados = filteredItens.filter(i => i.StatusConciliacao?.toLowerCase() === 'conciliado').length;
 
     const handleExportExcel = () => {
+        const statusLabel = (item) => {
+            if (item.status_conferencia === 'I') return 'Inapto (sem data)';
+            if (item.status_conferencia === 'A') return 'Aceito';
+            if (item.status_conferencia === 'P') return 'Pendente';
+            if (item.status_conferencia === 'R') return 'Recusado';
+            return item.StatusConferencia == 67 ? 'Conferido' : item.StatusConferencia == 78 ? 'Não Conferido' : item.StatusConferencia == 82 ? 'Removido' : item.StatusConferencia;
+        };
         const headers = ['Detalhe ID', 'Guia', 'Beneficiário', 'Data Realização', 'Valor', 'Status Conf.', 'Conciliação'];
         const csvContent = [headers.join(';')].concat(filteredItens.map(item => [
             item.detalheId,
@@ -240,7 +257,7 @@ export default function GestaoLotes() {
             item.CodigoBeneficiario,
             item.dataRealizacao,
             item.ValorProcedimento || 0,
-            item.StatusConferencia == 67 ? 'Conferido' : item.StatusConferencia == 78 ? 'Não Conferido' : item.StatusConferencia == 82 ? 'Removido' : item.StatusConferencia,
+            statusLabel(item),
             item.StatusConciliacao || ''
         ].join(';'))).join('\n');
         const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -254,6 +271,10 @@ export default function GestaoLotes() {
     };
 
     const handleStatusClick = async (item) => {
+        if (item.status_conferencia === 'I') {
+            alert('Item Inapto (sem data de realização) — o status não pode ser alterado manualmente.');
+            return;
+        }
         let nextStatus;
         if (item.StatusConferencia == 78) nextStatus = 67;
         else if (item.StatusConferencia == 67) nextStatus = 82;
@@ -265,7 +286,9 @@ export default function GestaoLotes() {
                 status_conferencia: nextStatus,
                 auto_envio: autoEnvio
             });
-            setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, StatusConferencia: nextStatus } : i));
+            setItensLote(prev => prev.map(i => i.id === item.id
+                ? { ...i, StatusConferencia: nextStatus, status_conferencia: ({ 67: 'A', 78: 'P', 82: 'R' })[nextStatus] || i.status_conferencia }
+                : i));
         } catch (e) {
             alert(e.response?.data?.detail || "Erro ao atualizar status");
         }
@@ -302,13 +325,35 @@ export default function GestaoLotes() {
     };
 
     const handleSendOP7 = async (item) => {
+        if (item.status_conferencia === 'I') {
+            alert('Item Inapto (sem data de realização) — não pode ser enviado ao portal.');
+            return;
+        }
         try {
             await api.put(`/lotes/itens/${item.id}`, {
                 auto_envio: true
             });
-            alert(`Job OP7 enviado com sucesso para o item ${item.detalheId}!`);
+            alert(`Job de conferência (OP18) enviado com sucesso para o item ${item.detalheId}!`);
         } catch (e) {
-            alert(e.response?.data?.detail || "Erro ao enviar Job OP7");
+            alert(e.response?.data?.detail || "Erro ao enviar Job de conferência (OP18)");
+        }
+    };
+
+    const handleSaveProtocolo = async (lote) => {
+        const protocolo = (protocoloEdit[lote.id_lote] ?? lote.protocolo ?? '').toString().trim();
+        if (!protocolo) {
+            alert('Informe o protocolo (capa) do lote no portal.');
+            return;
+        }
+        setSavingProtocolo(lote.id_lote);
+        try {
+            await api.put(`/lotes/${lote.id_lote}/protocolo`, { protocolo });
+            setProtocoloEdit(prev => ({ ...prev, [lote.id_lote]: '' }));
+            await loadLotes();
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Erro ao salvar protocolo.');
+        } finally {
+            setSavingProtocolo(null);
         }
     };
 
@@ -343,6 +388,15 @@ export default function GestaoLotes() {
                 return;
             }
             params = { numero_lote: lote.numero_lote, codigoPrestador: lote.cod_prestador };
+            if (formConfig?.requer_protocolo) {
+                // Novo portal ConferenciaFaturamento: endereçado por protocolo (capa)
+                if (!lote.protocolo) {
+                    alert('Informe e salve o Protocolo do lote antes de sincronizar (novo portal de Conferência do IPASGO).');
+                    return;
+                }
+                params.protocolo = lote.protocolo;
+                params.id_lote_interno = lote.id_lote;
+            }
         }
 
         try {
@@ -365,14 +419,15 @@ export default function GestaoLotes() {
     };
 
     const handleConferirTodos = async () => {
-        const itensPendentes = filteredItens.filter(i => i.StatusConferencia !== 67);
+        // Inaptos (sem data de realização) ficam de fora da conferência
+        const itensPendentes = filteredItens.filter(i => i.StatusConferencia !== 67 && i.status_conferencia !== 'I');
         if (itensPendentes.length === 0) {
-            alert('Todos os itens visíveis já estão conferidos.');
+            alert('Todos os itens elegíveis já estão conferidos.');
             return;
         }
         const confirmado = window.confirm(
             `Confirmar "Conferido" para ${itensPendentes.length} item(ns)?\n` +
-            (autoEnvio ? 'Jobs OP7 serão criados automaticamente para cada item.' : 'Apenas atualiza o status local (ative Envio Automático para criar Jobs OP7).')
+            (autoEnvio ? 'Jobs de conferência (OP18) serão criados automaticamente para cada item.' : 'Apenas atualiza o status local (ative Envio Automático para criar Jobs OP18).')
         );
         if (!confirmado) return;
 
@@ -385,14 +440,15 @@ export default function GestaoLotes() {
                     status_conferencia: 67,
                     auto_envio: autoEnvio
                 });
-                setItensLote(prev => prev.map(i => i.id === item.id ? { ...i, StatusConferencia: 67 } : i));
+                setItensLote(prev => prev.map(i => i.id === item.id
+                    ? { ...i, StatusConferencia: 67, status_conferencia: 'A' } : i));
                 sucessos++;
             } catch (e) {
                 falhas++;
             }
         }
         setConferindoTodos(false);
-        alert(`Concluído! ${sucessos} item(ns) conferido(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}.${autoEnvio ? '\nJobs OP7 criados para cada item processado.' : ''}`);
+        alert(`Concluído! ${sucessos} item(ns) conferido(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}.${autoEnvio ? '\nJobs de conferência (OP18) criados para cada item processado.' : ''}`);
     };
 
     return (
@@ -457,6 +513,7 @@ export default function GestaoLotes() {
                             <tr>
                                 <th className="px-6 py-4">ID Interno</th>
                                 <th className="px-6 py-4">Número Lote</th>
+                                {formConfig?.requer_protocolo && <th className="px-6 py-4">Protocolo</th>}
                                 <th className="px-6 py-4">Prestador</th>
                                 <th className="px-6 py-4">Status</th>
                                 <th className="px-6 py-4">Período</th>
@@ -466,7 +523,7 @@ export default function GestaoLotes() {
                         <tbody className="divide-y divide-slate-700/50">
                             {lotes.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="px-6 py-8 text-center text-slate-500">
+                                    <td colSpan={formConfig?.requer_protocolo ? "7" : "6"} className="px-6 py-8 text-center text-slate-500">
                                         Nenhum lote encontrado para este convênio.
                                     </td>
                                 </tr>
@@ -476,6 +533,30 @@ export default function GestaoLotes() {
                                     <td className="px-6 py-4 font-medium text-slate-200">
                                         {lote.numero_lote ? lote.numero_lote : <span className="text-slate-500 italic">Pendente...</span>}
                                     </td>
+                                    {formConfig?.requer_protocolo && (
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    placeholder="ex.: 899116"
+                                                    value={protocoloEdit[lote.id_lote] ?? lote.protocolo ?? ''}
+                                                    onChange={(e) => setProtocoloEdit(prev => ({ ...prev, [lote.id_lote]: e.target.value.replace(/\D/g, '') }))}
+                                                    className="w-28 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 text-sm focus:outline-none focus:border-primary"
+                                                    title="Protocolo/capa do lote no novo portal de Conferência (usado na importação)"
+                                                />
+                                                {(protocoloEdit[lote.id_lote] ?? '') !== (lote.protocolo ?? '') && (
+                                                    <button
+                                                        onClick={() => handleSaveProtocolo(lote)}
+                                                        disabled={savingProtocolo === lote.id_lote}
+                                                        className="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-xs transition-colors disabled:opacity-50"
+                                                    >
+                                                        Salvar
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    )}
                                     <td className="px-6 py-4">{lote.cod_prestador}</td>
                                     <td className="px-6 py-4">
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${
@@ -500,6 +581,7 @@ export default function GestaoLotes() {
                                             onClick={() => handleSyncLote(lote)}
                                             disabled={!formConfig?.rotina_sync
                                                 || (formConfig?.tipo_formulario === 'periodo' ? !lote.data_inicio : !lote.numero_lote)
+                                                || (formConfig?.requer_protocolo && !lote.protocolo)
                                                 || ['Cancelado', 'Cancelando'].includes(lote.status)}
                                             className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center"
                                             title={(() => {
@@ -736,9 +818,10 @@ export default function GestaoLotes() {
                                             onChange={e => setFiltroStatusConf(e.target.value)}
                                         >
                                             <option value="">Todos Status Conf.</option>
-                                            <option value="67">Conferido</option>
-                                            <option value="78">Não Conferido</option>
-                                            <option value="82">Removido</option>
+                                            <option value="67">Aceito / Conferido</option>
+                                            <option value="78">Pendente / Não Conferido</option>
+                                            <option value="82">Recusado / Removido</option>
+                                            <option value="I">Inapto (sem data)</option>
                                         </select>
                                     </div>
                                     
@@ -842,25 +925,27 @@ export default function GestaoLotes() {
                                                             </td>
                                                             <td className="px-4 py-2 font-mono text-xs text-slate-100">R$ {item.ValorProcedimento?.toFixed(2)}</td>
                                                             <td className="px-4 py-2">
-                                                                <button onClick={() => handleStatusClick(item)} className="focus:outline-none transition-transform hover:scale-105 active:scale-95">
-                                                                    {item.StatusConferencia == 67 ? (
-                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                                                                            <CheckCircle size={14} className="text-emerald-500" /> Conferido
-                                                                        </span>
-                                                                    ) : item.StatusConferencia == 78 ? (
-                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-400">
-                                                                            <HelpCircle size={16} className="text-blue-500" /> Não Conferido
-                                                                        </span>
-                                                                    ) : item.StatusConferencia == 82 ? (
-                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400">
-                                                                            <XCircle size={14} className="text-red-500" /> Removido
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                                                                            {item.StatusConferencia || '-'}
-                                                                        </span>
-                                                                    )}
-                                                                </button>
+                                                                {item.status_conferencia === 'I' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500" title="Item sem data de realização no portal — não habilitado a faturar">
+                                                                        <XCircle size={14} className="text-slate-500" /> Inapto
+                                                                    </span>
+                                                                ) : (
+                                                                    <button onClick={() => handleStatusClick(item)} className="focus:outline-none transition-transform hover:scale-105 active:scale-95">
+                                                                        {item.status_conferencia === 'A' || item.StatusConferencia == 67 ? (
+                                                                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                                                                                <CheckCircle size={14} className="text-emerald-500" /> Aceito
+                                                                            </span>
+                                                                        ) : item.status_conferencia === 'R' || item.StatusConferencia == 82 ? (
+                                                                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400">
+                                                                                <XCircle size={14} className="text-red-500" /> Recusado
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-400">
+                                                                                <HelpCircle size={16} className="text-blue-500" /> Pendente
+                                                                            </span>
+                                                                        )}
+                                                                    </button>
+                                                                )}
                                                             </td>
                                                             <td className="px-4 py-2">
                                                                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.StatusConciliacao?.toLowerCase() === 'conciliado' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-slate-700 text-slate-300'}`}>
@@ -868,10 +953,11 @@ export default function GestaoLotes() {
                                                                 </span>
                                                             </td>
                                                             <td className="px-4 py-2 text-right">
-                                                                <button 
+                                                                <button
                                                                     onClick={() => handleSendOP7(item)}
-                                                                    className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors"
-                                                                    title="Enviar Job OP7 (Portal)"
+                                                                    disabled={item.status_conferencia === 'I'}
+                                                                    className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                    title={item.status_conferencia === 'I' ? 'Item Inapto — não enviável ao portal' : 'Enviar Job de Conferência OP18 (Portal)'}
                                                                 >
                                                                     <Send size={14} />
                                                                 </button>

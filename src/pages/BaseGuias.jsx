@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldOff, Check, Info, AlertTriangle } from 'lucide-react';
+import { Download, Filter, X, Calendar, Clock, Plus, Printer, Activity, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldOff, Check, Info, AlertTriangle, SearchCheck } from 'lucide-react';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import SearchableSelect from '../components/SearchableSelect';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -11,6 +11,8 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import { Input, Select } from '../components/ui/Input';
 import NovaSolicitacaoModal from '../components/NovaSolicitacaoModal';
+import SolicitacaoObservacoesCell from '../components/SolicitacaoObservacoesCell';
+import SolicitacaoTimeline from '../components/SolicitacaoTimeline';
 
 // ── TimeoutPie: indicador visual de timeout de captura (Goiânia) ──
 const TIMEOUT_MINUTES = 59;
@@ -130,6 +132,11 @@ export default function BaseGuias() {
     const [filters, setFilters] = useState({
         created_at_start: '',
         created_at_end: '',
+        data_solicitacao_start: '',
+        data_solicitacao_end: '',
+        data_autorizacao_start: '',
+        data_autorizacao_end: '',
+        guia: '',
         carteirinha_id: '',
         id_convenio: '',
         senha: '',
@@ -172,9 +179,34 @@ export default function BaseGuias() {
         fetchGuias();
     }, [page, pageSize, filters, activeTab]);
 
+    // Mantém a versão atual do fetchGuias para callbacks/timers: evita que um
+    // interval criado antes de o usuário trocar filtros refaça o fetch com
+    // filtros antigos (closure obsoleta).
+    const fetchGuiasRef = useRef(null);
+    // Polling curto aberto após criar job pela célula de observações
+    // (justificativa OP15 / reimportação OP11): o job leva ~20-60s para
+    // atualizar o status via webhook e a lista não tem polling próprio.
+    const autoRefreshRef = useRef(null);
+    useEffect(() => () => {
+        if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    }, []);
 
-    const fetchGuias = async () => {
-        setLoading(true);
+    const handleJobCreated = () => {
+        fetchStats();
+        if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+        let ticks = 0;
+        autoRefreshRef.current = setInterval(() => {
+            ticks += 1;
+            if (fetchGuiasRef.current) fetchGuiasRef.current(true);
+            if (ticks >= 12) { // ~2 min de re-checagens silenciosas
+                clearInterval(autoRefreshRef.current);
+                autoRefreshRef.current = null;
+            }
+        }, 10000);
+    };
+
+    const fetchGuias = async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
             const params = {
                 limit: pageSize,
@@ -187,6 +219,15 @@ export default function BaseGuias() {
             if (filters.codigo_terapia) params.codigo_terapia = filters.codigo_terapia;
             if (filters.created_at_start) params.created_at_start = filters.created_at_start;
             if (filters.created_at_end) params.created_at_end = filters.created_at_end;
+            if (activeTab === 'solicitacoes') {
+                if (filters.data_solicitacao_start) params.data_solicitacao_start = filters.data_solicitacao_start;
+                if (filters.data_solicitacao_end) params.data_solicitacao_end = filters.data_solicitacao_end;
+            }
+            if (activeTab === 'autorizadas') {
+                if (filters.data_autorizacao_start) params.data_autorizacao_start = filters.data_autorizacao_start;
+                if (filters.data_autorizacao_end) params.data_autorizacao_end = filters.data_autorizacao_end;
+                if (filters.guia) params.guia = filters.guia;
+            }
             if (filters.carteirinha_id && filters.carteirinha_id !== "") {
                 params.carteirinha_id = parseInt(filters.carteirinha_id);
             }
@@ -207,9 +248,10 @@ export default function BaseGuias() {
         } catch (error) {
             console.error("Error fetching guias", error);
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
+    fetchGuiasRef.current = fetchGuias;
 
     const handleSort = (key) => {
         let direction = 'asc';
@@ -240,6 +282,11 @@ export default function BaseGuias() {
         setFilters({
             created_at_start: '',
             created_at_end: '',
+            data_solicitacao_start: '',
+            data_solicitacao_end: '',
+            data_autorizacao_start: '',
+            data_autorizacao_end: '',
+            guia: '',
             carteirinha_id: '',
             id_convenio: '',
             senha: '',
@@ -255,6 +302,10 @@ export default function BaseGuias() {
             const params = { aba: activeTab };
             if (filters.created_at_start) params.created_at_start = filters.created_at_start;
             if (filters.created_at_end) params.created_at_end = filters.created_at_end;
+            if (activeTab === 'solicitacoes') {
+                if (filters.data_solicitacao_start) params.data_solicitacao_start = filters.data_solicitacao_start;
+                if (filters.data_solicitacao_end) params.data_solicitacao_end = filters.data_solicitacao_end;
+            }
             if (filters.carteirinha_id) params.carteirinha_id = filters.carteirinha_id;
             if (filters.id_convenio) params.id_convenio = filters.id_convenio;
             if (filters.status) params.status = filters.status;
@@ -337,39 +388,10 @@ export default function BaseGuias() {
                 </div>
             </div>
 
-            {/* Stats Summary Cards */}
+            {/* Stats Summary Cards — ordem do workflow de faturamento:
+                Pendentes → Em análise → Negados → Cancelados → Autorizados → Total Geral */}
             {stats && (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <Card
-                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
-                            activeTab === 'solicitacoes' && !filters.status ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border'
-                        }`}
-                        onClick={() => navigateToTab('solicitacoes', '')}
-                    >
-                        <div className="bg-indigo-500/10 p-2 rounded-full text-indigo-400">
-                            <Activity size={20} />
-                        </div>
-                        <div>
-                            <div className="text-xs text-text-secondary font-medium">Total Geral</div>
-                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.total ?? 0}</div>
-                        </div>
-                    </Card>
-
-                    <Card
-                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
-                            activeTab === 'autorizadas' && !filters.status ? 'border-emerald-500 bg-emerald-500/5 ring-1 ring-emerald-500/20' : 'border-border'
-                        }`}
-                        onClick={() => navigateToTab('autorizadas', '')}
-                    >
-                        <div className="bg-emerald-500/10 p-2 rounded-full text-emerald-400">
-                            <CheckCircle size={20} />
-                        </div>
-                        <div>
-                            <div className="text-xs text-text-secondary font-medium">Autorizadas</div>
-                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.autorizadas ?? 0}</div>
-                        </div>
-                    </Card>
-
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                     <Card
                         className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
                             activeTab === 'solicitacoes' && filters.status === 'Pendente' ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500/20' : 'border-border'
@@ -387,6 +409,21 @@ export default function BaseGuias() {
 
                     <Card
                         className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'solicitacoes' && filters.status === 'Em análise' ? 'border-sky-500 bg-sky-500/5 ring-1 ring-sky-500/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('solicitacoes', 'Em análise')}
+                    >
+                        <div className="bg-sky-500/10 p-2 rounded-full text-sky-400">
+                            <SearchCheck size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Em análise</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.em_analise ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
                             activeTab === 'solicitacoes' && filters.status === 'Negado' ? 'border-rose-500 bg-rose-500/5 ring-1 ring-rose-500/20' : 'border-border'
                         }`}
                         onClick={() => navigateToTab('solicitacoes', 'Negado')}
@@ -395,7 +432,7 @@ export default function BaseGuias() {
                             <XCircle size={20} />
                         </div>
                         <div>
-                            <div className="text-xs text-text-secondary font-medium">Negadas</div>
+                            <div className="text-xs text-text-secondary font-medium">Negados</div>
                             <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.negadas ?? 0}</div>
                         </div>
                     </Card>
@@ -410,8 +447,38 @@ export default function BaseGuias() {
                             <X size={20} />
                         </div>
                         <div>
-                            <div className="text-xs text-text-secondary font-medium">Canceladas</div>
+                            <div className="text-xs text-text-secondary font-medium">Cancelados</div>
                             <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.canceladas ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'autorizadas' && !filters.status ? 'border-emerald-500 bg-emerald-500/5 ring-1 ring-emerald-500/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('autorizadas', '')}
+                    >
+                        <div className="bg-emerald-500/10 p-2 rounded-full text-emerald-400">
+                            <CheckCircle size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Autorizados</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.autorizadas ?? 0}</div>
+                        </div>
+                    </Card>
+
+                    <Card
+                        className={`flex items-center gap-3 p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:bg-slate-800/40 border ${
+                            activeTab === 'solicitacoes' && !filters.status ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border'
+                        }`}
+                        onClick={() => navigateToTab('solicitacoes', '')}
+                    >
+                        <div className="bg-indigo-500/10 p-2 rounded-full text-indigo-400">
+                            <Activity size={20} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-text-secondary font-medium">Total Geral</div>
+                            <div className="text-xl font-bold text-text-primary">{stats.overview?.guias_status?.total ?? 0}</div>
                         </div>
                     </Card>
                 </div>
@@ -489,6 +556,7 @@ export default function BaseGuias() {
                             ) : (
                                 <>
                                     <option value="Pendente">Pendente</option>
+                                    <option value="Em análise">Em análise</option>
                                     <option value="Negado">Negado</option>
                                     <option value="Cancelado">Cancelado</option>
                                     <option value="Aguardando">Aguardando Documentação</option>
@@ -496,6 +564,72 @@ export default function BaseGuias() {
                             )}
                         </Select>
                     </div>
+
+                    {activeTab === 'solicitacoes' && (
+                        <>
+                            <div className="w-full md:w-40">
+                                <label className="block text-xs font-semibold text-text-secondary mb-1">Data Solicit. (de)</label>
+                                <Input
+                                    type="date"
+                                    value={filters.data_solicitacao_start}
+                                    onChange={e => {
+                                        setFilters({ ...filters, data_solicitacao_start: e.target.value });
+                                        setPage(1);
+                                    }}
+                                />
+                            </div>
+                            <div className="w-full md:w-40">
+                                <label className="block text-xs font-semibold text-text-secondary mb-1">Data Solicit. (até)</label>
+                                <Input
+                                    type="date"
+                                    value={filters.data_solicitacao_end}
+                                    onChange={e => {
+                                        setFilters({ ...filters, data_solicitacao_end: e.target.value });
+                                        setPage(1);
+                                    }}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {activeTab === 'autorizadas' && (
+                        <>
+                            <div className="w-full md:w-40">
+                                <label className="block text-xs font-semibold text-text-secondary mb-1">Data Autoriz. (de)</label>
+                                <Input
+                                    type="date"
+                                    value={filters.data_autorizacao_start}
+                                    onChange={e => {
+                                        setFilters({ ...filters, data_autorizacao_start: e.target.value });
+                                        setPage(1);
+                                    }}
+                                />
+                            </div>
+                            <div className="w-full md:w-40">
+                                <label className="block text-xs font-semibold text-text-secondary mb-1">Data Autoriz. (até)</label>
+                                <Input
+                                    type="date"
+                                    value={filters.data_autorizacao_end}
+                                    onChange={e => {
+                                        setFilters({ ...filters, data_autorizacao_end: e.target.value });
+                                        setPage(1);
+                                    }}
+                                />
+                            </div>
+                            <div className="w-full md:w-44">
+                                <label className="block text-xs font-semibold text-text-secondary mb-1">Guia</label>
+                                <Input
+                                    type="text"
+                                    placeholder="Nº da guia..."
+                                    value={filters.guia}
+                                    onChange={e => {
+                                        setFilters({ ...filters, guia: e.target.value });
+                                        setPage(1);
+                                    }}
+                                />
+                            </div>
+                        </>
+                    )}
 
                     <div className="flex gap-2">
                         <Button variant="ghost" onClick={handleClearFilters} className="text-text-secondary hover:text-text-primary">
@@ -566,6 +700,12 @@ export default function BaseGuias() {
                                                         <Printer size={16} />
                                                     </button>
                                                 )}
+                                                {activeTab === 'solicitacoes' && g.id_convenio === 6 && (
+                                                    <SolicitacaoObservacoesCell
+                                                        solicitacao={g}
+                                                        onJobCreated={handleJobCreated}
+                                                    />
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">{formatDateTime(g.created_at)}</td>
                                             <td className="px-6 py-4 text-sm text-text-primary whitespace-nowrap">
@@ -603,6 +743,10 @@ export default function BaseGuias() {
                                             </td>
                                             <td className="px-6 py-4 text-sm text-text-secondary whitespace-nowrap">
                                                 <div className="flex items-center gap-2">
+                                                    {/* Linha do tempo: tempo sem resposta do convênio (Em análise / Pendentes) */}
+                                                    {activeTab === 'solicitacoes' && (
+                                                        <SolicitacaoTimeline solicitacao={g} />
+                                                    )}
                                                     {(g.id_convenio === 3 || g.id_convenio === 21 || g.timeout_captura) ? (
                                                         <TimeoutPie timestampCaptura={g.timestamp_captura} />
                                                     ) : (g.id_convenio === 2 || g.id_integrador === 2) ? (

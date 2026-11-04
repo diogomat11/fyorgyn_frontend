@@ -19,6 +19,11 @@ export default function DocViewerModal({ isOpen, onClose, doc, titulo }) {
     // URL original (para abrir direto no portal caso o usuário prefira)
     const originalUrl = doc.url_arquivo || '';
 
+    // Imagens (.jpg/.jpeg/.png) renderizam melhor como <img> centralizada;
+    // o restante (PDF) segue no iframe com o proxy autenticado do backend,
+    // que agora serve o Content-Type correto por extensão.
+    const isImage = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(originalUrl);
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-6 animate-fade-in">
             <div className="bg-slate-900 border border-slate-700 w-full max-w-6xl h-[92vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden">
@@ -87,16 +92,29 @@ export default function DocViewerModal({ isOpen, onClose, doc, titulo }) {
                         </div>
                     )}
 
-                    <iframe
-                        src={streamEndpoint}
-                        title={titulo || 'Documento'}
-                        className="w-full h-full border-0 bg-white"
-                        onLoad={() => setIframeLoading(false)}
-                        onError={() => {
-                            setIframeLoading(false);
-                            setIframeError(true);
-                        }}
-                    />
+                    {isImage ? (
+                        <img
+                            src={streamEndpoint}
+                            alt={titulo || 'Documento'}
+                            className="max-w-full max-h-full object-contain"
+                            onLoad={() => setIframeLoading(false)}
+                            onError={() => {
+                                setIframeLoading(false);
+                                setIframeError(true);
+                            }}
+                        />
+                    ) : (
+                        <iframe
+                            src={streamEndpoint}
+                            title={titulo || 'Documento'}
+                            className="w-full h-full border-0 bg-white"
+                            onLoad={() => setIframeLoading(false)}
+                            onError={() => {
+                                setIframeLoading(false);
+                                setIframeError(true);
+                            }}
+                        />
+                    )}
 
                     {iframeError && (
                         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950 p-6 text-center">

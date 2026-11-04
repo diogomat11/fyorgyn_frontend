@@ -15,6 +15,13 @@ const relatoriosRmApi = {
     extrair: (payload) => api.post('/relatorios/extrair', payload),
 
     /**
+     * Queue Gemini extraction for ALL pending medical reports of the user.
+     * @param {Object} payload - { id_paciente?, reprocessar? }
+     * @returns {Promise<Object>} { agendados, pulados_ja_extraidos, pulados_sem_arquivo }
+     */
+    extrairLote: (payload = {}) => api.post('/relatorios/extrair-lote', payload),
+
+    /**
      * List all therapy extractions for the current user.
      * @param {Object} params - { id_paciente?, area?, limit?, skip? }
      */

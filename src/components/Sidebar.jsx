@@ -16,7 +16,7 @@ export default function Sidebar() {
         if (['/carteirinhas', '/corpo-clinico'].includes(path)) return 'cadastros';
         if (['/guias', '/pei', '/terapias', '/agenda-fixa'].includes(path)) return 'autorizacoes';
         if (['/docs/relatorios-medicos', '/docs/avaliacao-inicial', '/docs/relatorios-pts'].includes(path)) return 'docs_autorizacao';
-        if (['/agendamentos', '/pipeline', '/faturamento/lotes', '/faturamento/agendamentos', '/faturamento/conciliacao', '/faturamento/protocolo'].includes(path)) return 'faturamento';
+        if (['/agendamentos', '/pipeline', '/faturamento/lotes', '/faturamento/agendamentos', '/faturamento/conciliacao', '/faturamento/protocolo', '/faturamento/recurso-glosa'].includes(path)) return 'faturamento';
         if (['/gestao-integradores', '/gestao-convenios', '/prioridades', '/clientes'].includes(path)) return 'administracao';
         return 'autorizacoes'; // Default
     });
@@ -153,6 +153,7 @@ export default function Sidebar() {
                             <Link to="/faturamento/agendamentos" className={getLinkClass('/faturamento/agendamentos')}>Lotes Agendamentos</Link>
                             <Link to="/faturamento/conciliacao" className={getLinkClass('/faturamento/conciliacao')}>Conciliação</Link>
                             <Link to="/faturamento/protocolo" className={getLinkClass('/faturamento/protocolo')}>Protocolo SADT</Link>
+                            <Link to="/faturamento/recurso-glosa" className={getLinkClass('/faturamento/recurso-glosa')}>Recurso de Glosa</Link>
                         </div>
                     )}
                 </div>

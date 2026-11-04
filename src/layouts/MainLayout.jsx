@@ -1,5 +1,6 @@
 import React from 'react';
 import Sidebar from '../components/Sidebar';
+import MfaWatcher from '../components/MfaWatcher';
 
 export default function MainLayout({ children }) {
     return (
@@ -10,6 +11,8 @@ export default function MainLayout({ children }) {
                     {children}
                 </div>
             </main>
+            {/* Modal global de código MFA (Bradesco/Faturi) — abre em qualquer tela */}
+            <MfaWatcher />
         </div>
     );
 }

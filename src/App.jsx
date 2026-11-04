@@ -25,6 +25,7 @@ import PipelineAgendamentos from './pages/PipelineAgendamentos';
 import AgendaFixa from './pages/AgendaFixa';
 import GestaoUnidades from './pages/GestaoUnidades';
 import DocsAutorizacao from './pages/DocsAutorizacao';
+import RecursoGlosa from './pages/RecursoGlosa';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -201,6 +202,12 @@ export default function App() {
         <Route path="/faturamento/protocolo" element={
           <PrivateRoute>
             <ProtocoloFichas />
+          </PrivateRoute>
+        } />
+
+        <Route path="/faturamento/recurso-glosa" element={
+          <PrivateRoute>
+            <RecursoGlosa />
           </PrivateRoute>
         } />
 

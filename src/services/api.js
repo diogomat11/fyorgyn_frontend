@@ -2,6 +2,9 @@ import axios from 'axios';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || '/api',
+    // Sem timeout o axios espera para sempre: com o backend congestionado o
+    // modal de MFA e os polls ficavam travados em "Enviando..." sem erro algum.
+    timeout: 30000,
 });
 
 // Add token to all requests

@@ -61,6 +61,13 @@ function ExtractionModal({ isOpen, onClose, onSave, editData, isExtracting, cart
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
+    // Acervo de relatórios médicos importados (op8 Evoluir / uploads) para
+    // processar direto pelo Gemini sem colar URL manualmente.
+    const [acervo, setAcervo] = useState([]);
+    const [acervoLoading, setAcervoLoading] = useState(false);
+    const [acervoSearch, setAcervoSearch] = useState('');
+    const [processandoId, setProcessandoId] = useState(null);
+
     useEffect(() => {
         if (editData) {
             setForm({
@@ -83,6 +90,69 @@ function ExtractionModal({ isOpen, onClose, onSave, editData, isExtracting, cart
         }
         setError('');
     }, [editData, isOpen]);
+
+    // Busca do acervo (debounce) — só no modo nova extração
+    useEffect(() => {
+        if (!isOpen || editData) return;
+        let cancelado = false;
+        const timer = setTimeout(async () => {
+            setAcervoLoading(true);
+            try {
+                const params = { page_size: 100, is_active: true };
+                if (acervoSearch.trim()) params.search = acervoSearch.trim();
+                const res = await api.get('/docs/rm', { params });
+                if (!cancelado) setAcervo(res.data?.items || []);
+            } catch (err) {
+                console.error('Erro ao carregar relatórios médicos:', err);
+                if (!cancelado) setAcervo([]);
+            } finally {
+                if (!cancelado) setAcervoLoading(false);
+            }
+        }, 400);
+        return () => { cancelado = true; clearTimeout(timer); };
+    }, [isOpen, editData, acervoSearch]);
+
+    const handleExtrairFromAcervo = async (rm) => {
+        if (!rm.url_arquivo || processandoId) return;
+        setProcessandoId(rm.id);
+        setError('');
+        try {
+            await relatoriosRmApi.extrair({
+                id_paciente: rm.id_paciente,
+                url_arquivo: rm.url_arquivo,
+                nome_paciente: rm.nome_paciente || null,
+                id_relatorio: rm.id_relatorio || null,
+            });
+            onSave(); // Refresh list (polling de progresso segue na tabela)
+            onClose();
+        } catch (err) {
+            setError(err.response?.data?.detail || 'Erro ao agendar extração');
+        } finally {
+            setProcessandoId(null);
+        }
+    };
+
+    const [loteProcessando, setLoteProcessando] = useState(false);
+
+    const handleExtrairTodos = async () => {
+        if (loteProcessando || processandoId) return;
+        if (!confirm('Processar com IA TODOS os relatórios pendentes (sem extração) do seu usuário?')) return;
+        setLoteProcessando(true);
+        setError('');
+        try {
+            const res = await relatoriosRmApi.extrairLote({});
+            const { agendados, pulados_ja_extraidos } = res.data || {};
+            alert(`Lote agendado: ${agendados} relatório(s) enviado(s) ao Gemini.\n` +
+                  `${pulados_ja_extraidos || 0} já extraído(s) foram pulados.\n` +
+                  'Acompanhe o progresso na tabela (atualiza a cada 5s).');
+            onSave();
+            onClose();
+        } catch (err) {
+            setError(err.response?.data?.detail || 'Erro ao agendar lote');
+        } finally {
+            setLoteProcessando(false);
+        }
+    };
 
     const handleChange = (field, value) => {
         setForm(prev => ({ ...prev, [field]: value }));
@@ -170,6 +240,86 @@ function ExtractionModal({ isOpen, onClose, onSave, editData, isExtracting, cart
                             {error}
                         </div>
                     )}
+
+                    {/* Acervo: relatórios médicos importados (op8 Evoluir / uploads) */}
+                    {!editData && (
+                        <div>
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                                <label className="block text-sm font-medium text-slate-300">
+                                    Relatórios importados
+                                    <span className="text-xs font-normal text-slate-500 ml-2">clique para processar com IA</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <div className="relative">
+                                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                                        <input
+                                            type="text"
+                                            value={acervoSearch}
+                                            onChange={e => setAcervoSearch(e.target.value)}
+                                            className="bg-slate-900/60 border border-slate-600 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-primary/50 focus:border-primary w-48"
+                                            placeholder="Buscar paciente/médico..."
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={handleExtrairTodos}
+                                        disabled={loteProcessando || processandoId !== null}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+                                        title="Enviar ao Gemini todos os relatórios pendentes (sem extração) do seu usuário"
+                                    >
+                                        {loteProcessando ? (
+                                            <Loader2 size={13} className="animate-spin" />
+                                        ) : (
+                                            <Sparkles size={13} />
+                                        )}
+                                        Processar todos
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/40 divide-y divide-slate-700/40">
+                                {acervoLoading ? (
+                                    <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-400">
+                                        <Loader2 size={16} className="animate-spin" /> Carregando relatórios...
+                                    </div>
+                                ) : acervo.length === 0 ? (
+                                    <div className="py-6 text-center text-sm text-slate-500">
+                                        Nenhum relatório médico importado{acervoSearch ? ' para esta busca' : ''}.
+                                    </div>
+                                ) : acervo.map(rm => (
+                                    <div key={rm.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-700/30 transition-colors">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm text-slate-200 truncate">{rm.nome_paciente || `Paciente #${rm.id_paciente}`}</div>
+                                            <div className="text-xs text-slate-500 truncate">
+                                                {rm.data_relatorio && <>Doc: {new Date(`${rm.data_relatorio}T00:00:00`).toLocaleDateString('pt-BR')} </>}
+                                                {rm.data_validade && <>| Val.: {new Date(`${rm.data_validade}T00:00:00`).toLocaleDateString('pt-BR')} </>}
+                                                {rm.nome_medico && <>| {rm.nome_medico}</>}
+                                            </div>
+                                        </div>
+                                        <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${rm.has_extracao ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                            {rm.has_extracao ? 'Já extraído' : 'Novo'}
+                                        </span>
+                                        <button
+                                            onClick={() => handleExtrairFromAcervo(rm)}
+                                            disabled={!rm.url_arquivo || processandoId !== null}
+                                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                            title={rm.url_arquivo ? 'Enviar ao Gemini' : 'Relatório sem arquivo'}
+                                        >
+                                            {processandoId === rm.id ? (
+                                                <Loader2 size={13} className="animate-spin" />
+                                            ) : (
+                                                <Sparkles size={13} />
+                                            )}
+                                            Processar
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-3">
+                        <span className="text-[10px] uppercase tracking-wider text-slate-500 shrink-0">ou processe manualmente</span>
+                        <div className="h-px bg-slate-700 flex-1" />
+                    </div>
 
                     {/* Paciente + URL */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -321,7 +471,40 @@ export default function GestaoTerapias() {
     const [total, setTotal] = useState(0);
     const [skip, setSkip] = useState(0);
     const [isPolling, setIsPolling] = useState(false);
+    const [conveniosPorPaciente, setConveniosPorPaciente] = useState({});
     const limit = 50;
+
+    // Mapa id_paciente -> "Convênio 1, Convênio 2" (carteirinhas × convenios).
+    // Compartilhado entre a coluna da tabela e o export Excel.
+    const buildConveniosPorPaciente = async () => {
+        const resConvenios = await api.get('/convenios/');
+        const conveniosMap = {};
+        for (const conv of (resConvenios.data || [])) {
+            conveniosMap[conv.id_convenio] = conv.nome;
+        }
+
+        const resCarts = await api.get('/carteirinhas/?limit=99999');
+        const idsPorPaciente = {};
+        for (const c of (resCarts.data.data || resCarts.data || [])) {
+            if (c.id_paciente && c.id_convenio) {
+                const idStr = String(c.id_paciente);
+                if (!idsPorPaciente[idStr]) idsPorPaciente[idStr] = new Set();
+                idsPorPaciente[idStr].add(c.id_convenio);
+            }
+        }
+
+        const resultado = {};
+        for (const [idStr, ids] of Object.entries(idsPorPaciente)) {
+            resultado[idStr] = Array.from(ids).map(id => conveniosMap[id]).filter(Boolean).join(', ');
+        }
+        return resultado;
+    };
+
+    useEffect(() => {
+        buildConveniosPorPaciente()
+            .then(setConveniosPorPaciente)
+            .catch(err => console.error('Erro ao carregar convênios por paciente:', err));
+    }, []);
 
     const carteirinhasOptions = React.useMemo(() => {
         return carteirinhas.map(c => ({
@@ -422,38 +605,16 @@ export default function GestaoTerapias() {
             if (filterPaciente) params.id_paciente = filterPaciente;
             if (filterArea) params.area = filterArea;
             if (filterStatus) params.status = filterStatus;
-            
+
             const resRecords = await relatoriosRmApi.listar(params);
             const allRecords = resRecords.data?.data || resRecords.data || [];
 
-            const resConvenios = await api.get('/convenios/');
-            const conveniosMap = {};
-            for (const conv of (resConvenios.data || [])) {
-                conveniosMap[conv.id_convenio] = conv.nome;
-            }
-
-            const resCarts = await api.get('/carteirinhas/?limit=99999');
-            const allCarts = resCarts.data?.data || resCarts.data || [];
-            
-            const patientMap = {};
-            for (const c of allCarts) {
-                if (c.id_paciente && c.id_convenio) {
-                    const idStr = String(c.id_paciente);
-                    if (!patientMap[idStr]) {
-                        patientMap[idStr] = new Set();
-                    }
-                    patientMap[idStr].add(c.id_convenio);
-                }
-            }
+            const mapaConvenios = Object.keys(conveniosPorPaciente).length > 0
+                ? conveniosPorPaciente
+                : await buildConveniosPorPaciente();
 
             const dataToExport = allRecords.map(record => {
-                const recIdStr = record.id_paciente ? String(record.id_paciente) : null;
-                const conveniosIds = recIdStr && patientMap[recIdStr] ? Array.from(patientMap[recIdStr]) : [];
-                
-                const conveniosNomes = conveniosIds
-                    .map(id => conveniosMap[id])
-                    .filter(nome => nome)
-                    .join(', ');
+                const conveniosNomes = mapaConvenios[String(record.id_paciente)] || '';
 
                 const row = {
                     'Paciente': record.nome_paciente || `Paciente #${record.id_paciente}`,
@@ -570,6 +731,7 @@ export default function GestaoTerapias() {
                         <thead>
                             <tr className="border-b border-slate-700/50">
                                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Paciente</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Convênio</th>
                                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Relatório</th>
                                 {AREAS_PADRAO.map(a => (
                                     <th key={a.key} className="text-center px-2 py-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" title={a.label}>
@@ -584,14 +746,14 @@ export default function GestaoTerapias() {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={14} className="text-center py-12">
+                                    <td colSpan={15} className="text-center py-12">
                                         <Loader2 size={24} className="animate-spin text-slate-500 mx-auto" />
                                         <p className="text-slate-500 mt-2 text-sm">Carregando...</p>
                                     </td>
                                 </tr>
                             ) : records.length === 0 ? (
                                 <tr>
-                                    <td colSpan={14} className="text-center py-12">
+                                    <td colSpan={15} className="text-center py-12">
                                         <FileText size={32} className="text-slate-600 mx-auto mb-2" />
                                         <p className="text-slate-500 text-sm">Nenhuma extração encontrada</p>
                                     </td>
@@ -602,6 +764,14 @@ export default function GestaoTerapias() {
                                         <td className="px-4 py-3">
                                             <div className="font-medium text-slate-200">{record.nome_paciente || `Paciente #${record.id_paciente}`}</div>
                                             <div className="text-xs text-slate-500">ID: {record.id_paciente}</div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span
+                                                className="text-xs text-slate-300 block max-w-[150px] truncate"
+                                                title={conveniosPorPaciente[String(record.id_paciente)] || ''}
+                                            >
+                                                {conveniosPorPaciente[String(record.id_paciente)] || '—'}
+                                            </span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className="text-slate-300 text-xs">{record.id_relatorio || '—'}</span>

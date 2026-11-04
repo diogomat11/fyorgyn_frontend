@@ -71,6 +71,15 @@ export default function Importacoes() {
   const [op14NumeroLote, setOp14NumeroLote] = useState('');
   const [op14CodPrestador, setOp14CodPrestador] = useState('');
 
+  // OPs novas do IPASGO — Recurso de Glosa (10/16) e Conferência de Faturamento (17/18):
+  // o novo portal endereça tudo por protocolo (capa) do lote
+  const [opProtocolo, setOpProtocolo] = useState('');
+  const [op17NumeroLote, setOp17NumeroLote] = useState('');
+  const [op18IdServico, setOp18IdServico] = useState('');
+  const [op18Status, setOp18Status] = useState('Aceito');
+  const [op18DataRealizacao, setOp18DataRealizacao] = useState('');
+  const [op16ServicosJson, setOp16ServicosJson] = useState('');
+
   // OP6 Evoluir parameters (Baixar Faturados)
   const [op6EvPlanoSaudeId, setOp6EvPlanoSaudeId] = useState('18afb174-a2c2-49ee-93d2-d6e4868817bc');
   const [op6EvDataInicial, setOp6EvDataInicial] = useState('');
@@ -79,6 +88,8 @@ export default function Importacoes() {
   // OP4 Evoluir parameters (Atualizar Data do PTS)
   const [op4EvIdRelatorio, setOp4EvIdRelatorio] = useState('');
   const [op4EvNovaData, setOp4EvNovaData] = useState('');
+  // OP8 Evoluir (Importar Relatórios Médicos): paciente opcional — vazio = todos
+  const [op8PacienteId, setOp8PacienteId] = useState('');
 
   // OP4 Unimed Goiânia parameters (Exames Finalizados)
   const [op4GoiDataIni, setOp4GoiDataIni] = useState('');
@@ -95,6 +106,11 @@ export default function Importacoes() {
   const [excelCodPrestador, setExcelCodPrestador] = useState('225529');
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const excelFileRef = useRef(null);
+
+  // CAESAN (convênio 16 → integrador 102): upload da planilha de autorizações
+  const [caesanFile, setCaesanFile] = useState(null);
+  const [uploadingCaesan, setUploadingCaesan] = useState(false);
+  const caesanFileRef = useRef(null);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
@@ -190,9 +206,12 @@ export default function Importacoes() {
   });
 
   const isStandalone = React.useMemo(() => {
-    return (selectedConvenio === '6' && ['3', 'op3_import_guias', '6', 'op6_check_baixados', '7', 'op7_fat_facplan', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote'].includes(importRotina)) ||
-           (selectedConvenio === '100' && ['1', 'op1', 'op1_importPacientes', 'op5_ImportCorpoClinico', 'op6_baixarFaturados', 'op4_atualizarDataPTS', 'OP_consultaDocs', 'op7_consultaDocs', 'op7', '7'].includes(importRotina)) ||
-           (selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(importRotina));
+    // OP6/OP7 removidas (inativas — substituídas pelo ConferenciaFaturamento)
+    return (selectedConvenio === '6' && ['3', 'op3_import_guias', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote', '10', 'op10_recurso_glosa', '16', 'op16_enviar_recurso_glosa', '17', 'op17_importar_conferencia', '18', 'op18_conferir_faturamento'].includes(importRotina)) ||
+           (selectedConvenio === '100' && ['1', 'op1', 'op1_importPacientes', 'op5_ImportCorpoClinico', 'op6_baixarFaturados', 'op4_atualizarDataPTS', 'OP_consultaDocs', 'op7_consultaDocs', 'op7', '7', 'op8_importRelatoriosMedicos', 'op8', '8'].includes(importRotina)) ||
+           (selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(importRotina)) ||
+           (selectedConvenio === '16' && ['2', 'op2_consultar_guia'].includes(importRotina)) ||
+           (selectedConvenio === '1' && ['0', 'op0_login', '0_fature', 'op0_login_fature'].includes(importRotina));
   }, [selectedConvenio, importRotina]);
 
   useEffect(() => {
@@ -282,6 +301,20 @@ export default function Importacoes() {
       (i) => i && typeof i === 'object' &&
         String(i.status || '').trim().toLowerCase() === 'capturada por outro prestador'
     );
+  };
+
+  // Resolve o lote interno do IPASGO pela chave do portal (protocolo first,
+  // fallback numero_lote) — usado pelas OPs 10/17 (exigem id_lote_interno)
+  const resolverLoteIpasgo = async ({ protocolo, numero_lote }) => {
+    try {
+      const res = await api.get(`/lotes/?id_convenio=6&limit=200`);
+      const lotes = res.data.data || [];
+      return lotes.find(l => protocolo && String(l.protocolo || '') === String(protocolo))
+          || lotes.find(l => numero_lote && String(l.numero_lote || '') === String(numero_lote))
+          || null;
+    } catch (e) {
+      return null;
+    }
   };
 
   const handleCreateJob = async () => {
@@ -409,6 +442,72 @@ export default function Importacoes() {
           data_fim: dtFimFormatted,
           cod_prestador: op13CodPrestador || (currentConvenioObj?.codigo_referenciado || '').trim()
         });
+      } else if (selectedConvenio === '6' && ['17', 'op17_importar_conferencia'].includes(finalRotina)) {
+        // OP17: importa faturáveis do novo portal ConferenciaFaturamento (por protocolo)
+        const protocolo = opProtocolo.trim();
+        if (!protocolo) { alert("Informe o Protocolo (capa) do lote no portal — ex.: 899116."); return; }
+        const lote = await resolverLoteIpasgo({ protocolo, numero_lote: op17NumeroLote.trim() });
+        const paramsObj = { protocolo };
+        if (op17NumeroLote.trim()) paramsObj.numero_lote = op17NumeroLote.trim();
+        if (lote) {
+          paramsObj.id_lote_interno = lote.id_lote;
+        } else {
+          // Lote do portal ainda não cadastrado no hub: o consumer da OP17 cria
+          // automaticamente (mesmo comportamento da OP6 antiga)
+          const criar = window.confirm(
+            `Nenhum lote local com o protocolo ${protocolo}${op17NumeroLote.trim() ? ` / lote ${op17NumeroLote.trim()}` : ''}.\n\n` +
+            "Criar o lote automaticamente durante a importação?"
+          );
+          if (!criar) return;
+        }
+        finalParams = JSON.stringify(paramsObj);
+      } else if (selectedConvenio === '6' && ['18', 'op18_conferir_faturamento'].includes(finalRotina)) {
+        // OP18: confirma item (ConferirItem) + data (EditarDataRealizacao)
+        const protocolo = opProtocolo.trim();
+        if (!protocolo) { alert("Informe o Protocolo (capa) do lote no portal."); return; }
+        if (!op18IdServico.trim()) { alert("Informe o IdServico do item (coluna Detalhe ID)."); return; }
+        let dtFormatted = null;
+        if (op18DataRealizacao) {
+          const p = op18DataRealizacao.split('-');
+          if (p.length === 3) dtFormatted = `${p[2]}/${p[1]}/${p[0]}`;
+        }
+        finalParams = JSON.stringify({
+          protocolo,
+          idServico: op18IdServico.trim(),
+          idDetalhe: null,
+          status: op18Status || 'Aceito',
+          dataRealizacao: dtFormatted
+        });
+      } else if (selectedConvenio === '6' && ['10', 'op10_recurso_glosa'].includes(finalRotina)) {
+        // OP10: importa itens de recurso de glosa do protocolo
+        const protocolo = opProtocolo.trim();
+        if (!protocolo) { alert("Informe o Protocolo do lote (ex.: 895854)."); return; }
+        const lote = await resolverLoteIpasgo({ protocolo });
+        if (!lote) {
+          alert("Nenhum lote localizado com este protocolo. Grave o protocolo do lote em Faturamento → Lotes - Convênios e tente novamente.");
+          return;
+        }
+        finalParams = JSON.stringify({ protocolo, id_lote_interno: lote.id_lote });
+      } else if (selectedConvenio === '6' && ['16', 'op16_enviar_recurso_glosa'].includes(finalRotina)) {
+        // OP16: envio das justificativas — uso avançado manual (o fluxo padrão é
+        // disparado pela tela Recurso de Glosa, que monta os serviços do banco)
+        const protocolo = opProtocolo.trim();
+        if (!protocolo) { alert("Informe o Protocolo do lote."); return; }
+        let servicos = [];
+        const jsonBruto = op16ServicosJson.trim();
+        if (jsonBruto) {
+          try {
+            servicos = JSON.parse(jsonBruto);
+            if (!Array.isArray(servicos)) throw new Error('não é lista');
+          } catch (e) {
+            alert("JSON de serviços inválido. Use uma lista: [{\"chave\":..., \"justificativa\":\"...\"}]");
+            return;
+          }
+        } else {
+          alert("Informe o JSON de serviços (o envio padrão é feito pela tela Recurso de Glosa).");
+          return;
+        }
+        finalParams = JSON.stringify({ protocolo, capa: protocolo, servicos });
       } else if (selectedConvenio === '100' && ['op6_baixarFaturados'].includes(finalRotina)) {
         if (!op6EvDataInicial || !op6EvDataFinal) {
           alert("Por favor, preencha as datas Inicial e Final.");
@@ -436,6 +535,11 @@ export default function Importacoes() {
           id_relatorio: op4EvIdRelatorio,
           data: novaDataFormatted
         });
+      } else if (selectedConvenio === '100' && ['op8_importRelatoriosMedicos', 'op8', '8'].includes(finalRotina)) {
+        // OP8: paciente_id opcional — sem ele o robô pagina o relatório de todos os pacientes
+        if (op8PacienteId.trim()) {
+          finalParams = JSON.stringify({ paciente_id: op8PacienteId.trim() });
+        }
       } else if (selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(finalRotina)) {
         if (!op4GoiDataIni || !op4GoiDataFim) {
           alert("Por favor, preencha as datas de Início e Fim.");
@@ -573,7 +677,8 @@ export default function Importacoes() {
       if (excelCodPrestador) formData.append('cod_prestador', excelCodPrestador);
 
       const res = await api.post('/jobs/import/fature-batch', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000 // lotes grandes podem levar minutos; default de 30s abortaria
       });
 
       alert(`${res.data.message} — ${res.data.count} job(s) criado(s).`);
@@ -591,6 +696,40 @@ export default function Importacoes() {
     }
   };
 
+  // ── Upload Planilha CAESAN (Autorizações OP1 — integrador 102) ──
+  const handleUploadCaesan = async () => {
+    if (!caesanFile) {
+      alert('Selecione a planilha CAESAN (.xlsx com aba "modelo_csv" ou .csv).');
+      return;
+    }
+    if (selectedConvenio !== '16') {
+      alert('Selecione o convênio CAESAN antes de importar.');
+      return;
+    }
+    if (!window.confirm(`Importar planilha "${caesanFile.name}" e criar jobs de autorização CAESAN (OP1) por linha?`)) return;
+
+    setUploadingCaesan(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', caesanFile);
+      const res = await api.post('/jobs/import/caesan-autorizacoes', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000 // lotes grandes podem levar minutos; default de 30s abortaria
+      });
+      const erros = res.data.total_errors
+        ? `\n${res.data.total_errors} linha(s) ignorada(s):\n${(res.data.errors || []).join('\n')}`
+        : '';
+      alert(`${res.data.message} — ${res.data.count} job(s) criado(s).${erros}`);
+      setCaesanFile(null);
+      if (caesanFileRef.current) caesanFileRef.current.value = '';
+      fetchJobs();
+    } catch (e) {
+      alert('Erro no upload: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setUploadingCaesan(false);
+    }
+  };
+
   // ── Export Excel (Fature Jobs) ──
   const handleExportFature = async () => {
     if (!selectedConvenio) {
@@ -598,8 +737,12 @@ export default function Importacoes() {
       return;
     }
     try {
+      // Timeout dedicado maior que o padrão (30s) do api.js: a exportação
+      // percorre todos os jobs do convênio e, com volume alto, pode passar
+      // de 30s — o timeout padrão abortava antes de o Excel ser gerado.
       const res = await api.get(`/jobs/export/fature?id_convenio=${selectedConvenio}`, {
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 120000
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
@@ -619,7 +762,15 @@ export default function Importacoes() {
       case 'success': return <Badge variant="success">Sucesso</Badge>;
       case 'error': return <span title={job.error_message || 'Erro Desconhecido'} className="cursor-help"><Badge variant="error">Erro</Badge></span>;
       case 'pending': return <Badge variant="warning">Pendente</Badge>;
-      case 'processing': return <Badge variant="info">Processando</Badge>;
+      case 'processing': {
+        // locked_by é a URL do slot (ex.: http://127.0.0.1:9001); a porta identifica o server
+        const port = (job.locked_by || '').split(':').pop();
+        return (
+          <span title={job.locked_by || 'Aguardando servidor'}>
+            <Badge variant="info">Processando{port ? ` · :${port}` : ''}</Badge>
+          </span>
+        );
+      }
       default: return <Badge>{job.status}</Badge>;
     }
   };
@@ -763,12 +914,18 @@ export default function Importacoes() {
             <Select
               value={importRotina}
               onChange={e => setImportRotina(e.target.value)}
-              disabled={currentOperacoes.length === 0}
+              disabled={currentOperacoes.length === 0 && selectedConvenio !== '1'}
             >
-              {currentOperacoes.length === 0 && <option value="">Sem Rotinas</option>}
+              {currentOperacoes.length === 0 && selectedConvenio !== '1' && <option value="">Sem Rotinas</option>}
               {currentOperacoes.map(op => (
                 <option key={op.id} value={op.valor}>{op.descricao}</option>
               ))}
+              {selectedConvenio === '1' && (
+                <>
+                  <option value="0_fature">🔐 Login — Faturi (MFA)</option>
+                  <option value="0">Login — Autorize</option>
+                </>
+              )}
             </Select>
           </div>
           {(importRotina === '2' || importRotina === 'captura' || importRotina === 'op2_captura') && (
@@ -881,6 +1038,131 @@ export default function Importacoes() {
                   value={op7ValorProcedimento}
                   onChange={e => setOp7ValorProcedimento(e.target.value)}
                 />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['17', 'op17_importar_conferencia'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Protocolo (capa) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 899116"
+                  value={opProtocolo}
+                  onChange={e => setOpProtocolo(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Número do Lote (opcional)</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 100557"
+                  value={op17NumeroLote}
+                  onChange={e => setOp17NumeroLote(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-6">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  O lote interno é localizado automaticamente pelo protocolo (ou número). Itens sem data de
+                  realização no portal entram como <span className="font-bold">Inapto</span>.
+                </div>
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['18', 'op18_conferir_faturamento'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Protocolo (capa) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 899116"
+                  value={opProtocolo}
+                  onChange={e => setOpProtocolo(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">IdServico (Detalhe ID) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 95681957"
+                  value={op18IdServico}
+                  onChange={e => setOp18IdServico(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Status *</label>
+                <select
+                  value={op18Status}
+                  onChange={e => setOp18Status(e.target.value)}
+                  className="w-full h-[42px] bg-slate-800 border border-slate-700 rounded-lg px-3 text-sm text-slate-200 focus:outline-none focus:border-primary"
+                >
+                  <option value="Aceito">Aceito</option>
+                  <option value="Recusado">Recusado</option>
+                  <option value="Pendente">Pendente</option>
+                </select>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Realização (enviada junto)</label>
+                <Input
+                  type="date"
+                  value={op18DataRealizacao}
+                  onChange={e => setOp18DataRealizacao(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['10', 'op10_recurso_glosa'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Protocolo (capa) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 895854"
+                  value={opProtocolo}
+                  onChange={e => setOpProtocolo(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-9">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Importa todos os itens glosados do lote. O lote interno é localizado pelo protocolo. O fluxo
+                  completo (justificativas e envio) fica na tela <span className="font-bold">Faturamento → Recurso de Glosa</span>.
+                </div>
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['16', 'op16_enviar_recurso_glosa'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Protocolo (capa) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 895854"
+                  value={opProtocolo}
+                  onChange={e => setOpProtocolo(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-9">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Serviços (JSON) *</label>
+                <textarea
+                  rows={4}
+                  placeholder='[{"chave":95355859,"quantidade_glosada":1,"valor_recurso":130,"justificativa":"texto..."}]'
+                  value={op16ServicosJson}
+                  onChange={e => setOp16ServicosJson(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 font-mono focus:outline-none focus:border-primary"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Uso avançado manual — o envio padrão é feito pela tela Recurso de Glosa (monta os serviços do banco).
+                </p>
               </div>
             </>
           )}
@@ -1059,6 +1341,18 @@ export default function Importacoes() {
             </>
           )}
 
+          {selectedConvenio === '100' && ['op8_importRelatoriosMedicos', 'op8', '8'].includes(importRotina) && (
+            <div className="md:col-span-6">
+              <label className="block text-sm font-medium text-text-secondary mb-1">ID do Paciente (opcional)</label>
+              <Input
+                type="text"
+                placeholder="Ex: f2560cff-5915-47aa-9e70-ec21cc9d3ac6"
+                value={op8PacienteId}
+                onChange={e => setOp8PacienteId(e.target.value)}
+              />
+            </div>
+          )}
+
           {selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(importRotina) && (
             <>
               <div className="md:col-span-12">
@@ -1091,6 +1385,48 @@ export default function Importacoes() {
                   onChange={e => setOp4GoiGuia(e.target.value)}
                 />
               </div>
+            </>
+          )}
+
+          {selectedConvenio === '16' && importRotina === 'op1_autorizacao' && (
+            <>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <FileSpreadsheet size={14} />
+                  CAESAN — upload da planilha de autorizações (.xlsx com aba <strong>modelo_csv</strong> ou .csv). Uma linha = 1 job OP1 (Solicitação SP-SADT) com as credenciais do tenant. Colunas: <strong>ID Paciente, Nome do Paciente, CID, data_atendimento, Técnica, PROFISSIONAL, Espc_Autorização, codigo, Total, caminho, JUSTIFICATIVA</strong>.
+                </div>
+              </div>
+              <div className="md:col-span-8">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Planilha CAESAN (.xlsx / .csv) *</label>
+                <input
+                  ref={caesanFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={e => setCaesanFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-text-secondary file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-500/20 file:text-emerald-400 hover:file:bg-emerald-500/30 file:cursor-pointer cursor-pointer bg-surface border border-border rounded-lg transition-colors"
+                />
+              </div>
+              <div className="md:col-span-4">
+                <Button
+                  onClick={handleUploadCaesan}
+                  disabled={uploadingCaesan || !caesanFile}
+                  className="w-full h-[42px]"
+                >
+                  {uploadingCaesan ? (
+                    <><RefreshCcw size={16} className="animate-spin" /> Enviando...</>
+                  ) : (
+                    <><Upload size={16} /> Importar Autorizações</>
+                  )}
+                </Button>
+              </div>
+              {caesanFile && (
+                <div className="md:col-span-12">
+                  <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                    <FileSpreadsheet size={14} />
+                    Arquivo selecionado: <strong>{caesanFile.name}</strong> ({(caesanFile.size / 1024).toFixed(1)} KB)
+                  </div>
+                </div>
+              )}
             </>
           )}
 
