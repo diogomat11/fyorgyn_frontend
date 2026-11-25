@@ -32,6 +32,26 @@ const recursoGlosaApi = {
     /** Dispara o job da OP16 (envio ao portal) para os itens prontos. */
     enviar: (idLote, itemIds = null) =>
         api.post(`/recurso-glosa/lotes/${idLote}/enviar`, itemIds ? { item_ids: itemIds } : {}),
+
+    /** Análise prévia dos caminhos de anexos para o recurso de glosa (OP21). */
+    analisarAnexos: (idLote, caminhos) =>
+        api.post(`/recurso-glosa/lotes/${idLote}/anexos/analisar`, { caminhos }),
+
+    /** Cria jobs de envio de anexo (OP21) para o protocolo do lote. */
+    criarAnexos: (idLote, caminhos) =>
+        api.post(`/recurso-glosa/lotes/${idLote}/anexos`, { caminhos }),
+
+    /** Consulta status consolidado dos jobs OP21 deste recurso de glosa. */
+    statusAnexos: (idLote) =>
+        api.get(`/recurso-glosa/lotes/${idLote}/anexos/status`),
+
+    /** Reprocessa anexos pendentes ou abortados (ou específicos por job_ids). */
+    reprocessarAnexos: (idLote, jobIds = null) =>
+        api.post(`/recurso-glosa/lotes/${idLote}/anexos/reprocessar`, jobIds ? { job_ids: jobIds } : {}),
+
+    /** Aborta a fila de envio de anexos deste recurso de glosa. */
+    abortarAnexos: (idLote) =>
+        api.post(`/recurso-glosa/lotes/${idLote}/anexos/abortar`),
 };
 
 export default recursoGlosaApi;

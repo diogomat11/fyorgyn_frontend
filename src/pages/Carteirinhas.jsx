@@ -280,10 +280,11 @@ export default function Carteirinhas() {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
+            const resumoUpload = `(${res.data.added || 0} adicionada(s), ${res.data.updated || 0} atualizada(s))`;
             if (res.data.warnings && res.data.warnings.length > 0) {
-                alert("Upload parcialmente concluído!\nErros ignorados:\n" + res.data.warnings.slice(0, 10).join("\n") + (res.data.warnings.length > 10 ? "\n..." : ""));
+                alert(`Upload parcialmente concluído! ${resumoUpload}\nAvisos:\n` + res.data.warnings.slice(0, 10).join("\n") + (res.data.warnings.length > 10 ? "\n..." : ""));
             } else {
-                alert("Upload realizado com sucesso!");
+                alert(`Upload realizado com sucesso! ${resumoUpload}`);
             }
 
             setFile(null);

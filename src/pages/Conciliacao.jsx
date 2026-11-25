@@ -90,7 +90,7 @@ export default function Conciliacao() {
         if (!selectedLoteConvenio || !selectedLoteAgendamento) { alert("Selecione ambos os lotes."); return; }
         setConciliando(true);
         try {
-            const res = await api.post('/conciliacao/conciliar', { id_lote_convenio: parseInt(selectedLoteConvenio), id_lote_ag: parseInt(selectedLoteAgendamento), auto_envio: autoEnvio });
+            const res = await api.post('/conciliacao/conciliar', { id_lote_convenio: parseInt(selectedLoteConvenio), id_lote_ag: parseInt(selectedLoteAgendamento), auto_envio: autoEnvio }, { timeout: 300000 });
             setResultado(res.data);
             setIsLinked(true);  // Agora está vinculado
             loadItens();
@@ -103,7 +103,7 @@ export default function Conciliacao() {
         if (!confirm("Tem certeza que deseja desvincular este lote de agendamento do lote de faturamento? Todos os itens voltarão para 'Não Conciliado'.")) return;
         setRevertendo(true);
         try {
-            const res = await api.post('/conciliacao/reverter', { id_lote_ag: parseInt(selectedLoteAgendamento), auto_envio: autoEnvio });
+            const res = await api.post('/conciliacao/reverter', { id_lote_ag: parseInt(selectedLoteAgendamento), auto_envio: autoEnvio }, { timeout: 300000 });
             setResultado(res.data);
             setIsLinked(false);
             setSelectedLoteConvenio('');

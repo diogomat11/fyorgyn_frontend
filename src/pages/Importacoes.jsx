@@ -16,6 +16,11 @@ import CheckBox from '../components/ui/CheckBox';
 
 import WorkerList from '../components/WorkerList';
 
+// AMIL (id_convenio 9): valores de rotina vindos do dropdown (convenio_operacoes)
+// — 'op0_login'/'op1_consulta' canônicos do banco (D5) + aliases numéricos/canônicos aceitos pelo worker
+const AMIL_OP0_ROTINAS = ['0', 'op0_login'];
+const AMIL_OP1_ROTINAS = ['1', 'op1_consulta', 'op1_consulta_guias'];
+
 export default function Importacoes() {
   const location = useLocation();
   const [loading, setLoading] = useState(false);
@@ -80,6 +85,26 @@ export default function Importacoes() {
   const [op18DataRealizacao, setOp18DataRealizacao] = useState('');
   const [op16ServicosJson, setOp16ServicosJson] = useState('');
 
+  // OP19 (anexar arquivo à guia)
+  const [op19Guia, setOp19Guia] = useState('');
+  const [op19Senha, setOp19Senha] = useState('');
+  const [op19Caminho, setOp19Caminho] = useState('');
+  const [op21Caminho, setOp21Caminho] = useState('');
+
+  // OP20 (validar e extrair CodigoBeneficiario das carteirinhas do user_id)
+  const [op20Modo, setOp20Modo] = useState('validar_e_atualizar');
+  const [op20ApenasSemCodigo, setOp20ApenasSemCodigo] = useState(false);
+  const [op20ConfirmarPesquisar, setOp20ConfirmarPesquisar] = useState(false);
+  const [op20ModalOpen, setOp20ModalOpen] = useState(false);
+  const [op20Tab, setOp20Tab] = useState('auditoria');
+  const [op20Auditoria, setOp20Auditoria] = useState([]);
+  const [op20TotalBase, setOp20TotalBase] = useState(0);
+  const [op20Duplicados, setOp20Duplicados] = useState([]);
+  const [op20LoadingAudit, setOp20LoadingAudit] = useState(false);
+  const [op20StatusFilter, setOp20StatusFilter] = useState('');
+  const [op20ApenasDivergentes, setOp20ApenasDivergentes] = useState(false);
+  const [op20SelectedAuditIds, setOp20SelectedAuditIds] = useState([]);
+
   // OP6 Evoluir parameters (Baixar Faturados)
   const [op6EvPlanoSaudeId, setOp6EvPlanoSaudeId] = useState('18afb174-a2c2-49ee-93d2-d6e4868817bc');
   const [op6EvDataInicial, setOp6EvDataInicial] = useState('');
@@ -95,6 +120,12 @@ export default function Importacoes() {
   const [op4GoiDataIni, setOp4GoiDataIni] = useState('');
   const [op4GoiDataFim, setOp4GoiDataFim] = useState('');
   const [op4GoiGuia, setOp4GoiGuia] = useState('');
+
+  // AMIL (convênio 9) OP1 Consulta de Guias parameters
+  const [amilDataIni, setAmilDataIni] = useState('');
+  const [amilDataFim, setAmilDataFim] = useState('');
+  const [amilSenha, setAmilSenha] = useState('');
+  const [amilCarteirinha, setAmilCarteirinha] = useState('');
 
   // Excel Batch Upload State (Bradesco Fature)
   const [excelFile, setExcelFile] = useState(null);
@@ -205,13 +236,17 @@ export default function Importacoes() {
     return numA - numB;
   });
 
+  // AMIL OP1: filtros exibidos apenas no convênio 9 na rotina de consulta de guias
+  const isAmilOp1Consulta = selectedConvenio === '9' && AMIL_OP1_ROTINAS.includes(importRotina);
+
   const isStandalone = React.useMemo(() => {
     // OP6/OP7 removidas (inativas — substituídas pelo ConferenciaFaturamento)
-    return (selectedConvenio === '6' && ['3', 'op3_import_guias', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote', '10', 'op10_recurso_glosa', '16', 'op16_enviar_recurso_glosa', '17', 'op17_importar_conferencia', '18', 'op18_conferir_faturamento'].includes(importRotina)) ||
+    return (selectedConvenio === '6' && ['3', 'op3_import_guias', '11', 'op11_import_guias_api', '12', 'op12_impressao_api', '13', 'op13_criar_lote', '14', 'op14_cancelar_lote', '10', 'op10_recurso_glosa', '16', 'op16_enviar_recurso_glosa', '17', 'op17_importar_conferencia', '18', 'op18_conferir_faturamento', '19', 'op19_anexar_arquivo_guia', '21', 'op21_anexar_recurso_glosa'].includes(importRotina)) ||
            (selectedConvenio === '100' && ['1', 'op1', 'op1_importPacientes', 'op5_ImportCorpoClinico', 'op6_baixarFaturados', 'op4_atualizarDataPTS', 'OP_consultaDocs', 'op7_consultaDocs', 'op7', '7', 'op8_importRelatoriosMedicos', 'op8', '8'].includes(importRotina)) ||
            (selectedConvenio === '3' && ['4', 'op4_finalizados', 'finalizados', 'exames_finalizados'].includes(importRotina)) ||
            (selectedConvenio === '16' && ['2', 'op2_consultar_guia'].includes(importRotina)) ||
-           (selectedConvenio === '1' && ['0', 'op0_login', '0_fature', 'op0_login_fature'].includes(importRotina));
+           (selectedConvenio === '1' && ['0', 'op0_login', '0_fature', 'op0_login_fature'].includes(importRotina)) ||
+           (selectedConvenio === '9' && [...AMIL_OP0_ROTINAS, ...AMIL_OP1_ROTINAS].includes(importRotina));
   }, [selectedConvenio, importRotina]);
 
   useEffect(() => {
@@ -226,9 +261,100 @@ export default function Importacoes() {
     }
   }, [selectedConvenio, convenios]);
 
+  // Limpa os filtros AMIL ao trocar de convênio/rotina (campos exclusivos da OP1 do convênio 9)
+  useEffect(() => {
+    if (!isAmilOp1Consulta) {
+      setAmilDataIni('');
+      setAmilDataFim('');
+      setAmilSenha('');
+      setAmilCarteirinha('');
+    }
+  }, [isAmilOp1Consulta]);
+
   useEffect(() => {
     fetchConvenios();
   }, []);
+
+  useEffect(() => {
+    if (selectedConvenio === '6' && ['20', 'op20', 'op20_validar_codigo_beneficiario'].includes(importRotina)) {
+      if (importType !== 'single' && importType !== 'multiple' && importType !== 'all') {
+        setImportType('all');
+      }
+    }
+  }, [selectedConvenio, importRotina]);
+
+  const fetchOp20Dados = async (statusOvr = op20StatusFilter, divOvr = op20ApenasDivergentes) => {
+    setOp20LoadingAudit(true);
+    try {
+      const params = { limit: 5000 };
+      if (statusOvr) params.status = statusOvr;
+      if (divOvr) params.apenas_divergentes = true;
+      const [resAudit, resDup] = await Promise.all([
+        api.get('/carteirinhas/codigo-beneficiario/auditoria', { params }),
+        api.get('/carteirinhas/codigo-beneficiario/duplicados')
+      ]);
+      setOp20Auditoria(resAudit.data?.data || []);
+      setOp20TotalBase(resAudit.data?.total_carteirinhas_base || 0);
+      setOp20Duplicados(resDup.data?.data || []);
+      setOp20SelectedAuditIds([]);
+    } catch (e) {
+      console.error('Erro ao carregar dados OP20:', e);
+    } finally {
+      setOp20LoadingAudit(false);
+    }
+  };
+
+  const handleOpenOp20Modal = () => {
+    setOp20ModalOpen(true);
+    fetchOp20Dados();
+  };
+
+  const handleAplicarOp20Selecionados = async (idsParaAplicar) => {
+    const ids = idsParaAplicar || op20SelectedAuditIds;
+    if (!ids || ids.length === 0) {
+      alert('Selecione ao menos um item com Código Portal válido para aplicar.');
+      return;
+    }
+    try {
+      const res = await api.post('/carteirinhas/codigo-beneficiario/aplicar', {
+        auditoria_ids: ids
+      });
+      alert(`${res.data?.applied || 0} código(s) de beneficiário aplicado(s) na base de carteirinhas!`);
+      fetchOp20Dados();
+      fetchCarteirinhas();
+    } catch (e) {
+      alert('Erro ao aplicar códigos: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const handleExportOp20Csv = () => {
+    if (!op20Auditoria || op20Auditoria.length === 0) {
+      alert('Nenhum registro de auditoria para exportar.');
+      return;
+    }
+    const headers = ['ID Auditoria', 'Carteirinha', 'Paciente', 'Codigo Anterior', 'Codigo Portal', 'Status', 'Aplicado', 'Titulo Portal', 'Fonte', 'Job ID', 'Data'];
+    const rows = op20Auditoria.map(r => [
+      r.id ?? '',
+      r.carteirinha ?? '',
+      `"${String(r.paciente || '').replace(/"/g, '""')}"`,
+      r.codigo_anterior ?? '',
+      r.codigo_portal ?? '',
+      r.status ?? '',
+      r.aplicado ? 'Sim' : 'Nao',
+      `"${String(r.titulo || '').replace(/"/g, '""')}"`,
+      r.fonte ?? '',
+      r.job_id ?? '',
+      r.created_at ?? ''
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,﻿' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `auditoria_codigo_beneficiario_ipasgo.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const fetchJobs = async () => {
     try {
@@ -508,6 +634,34 @@ export default function Importacoes() {
           return;
         }
         finalParams = JSON.stringify({ protocolo, capa: protocolo, servicos });
+      } else if (selectedConvenio === '6' && ['19', 'op19_anexar_arquivo_guia'].includes(finalRotina)) {
+        // OP19: anexa 1 PDF à guia (fluxo em lote fica no modal Anexos do GestaoLotes)
+        const protocolo = opProtocolo.trim();
+        if (!protocolo) { alert("Informe o Protocolo (capa) do lote."); return; }
+        if (!op19Guia.trim()) { alert("Informe o número da guia (8 dígitos)."); return; }
+        if (!op19Caminho.trim()) { alert("Informe o caminho local do PDF (nome com a senha da guia)."); return; }
+        finalParams = JSON.stringify({
+          protocolo,
+          numeroGuiaOperadora: op19Guia.trim(),
+          senha_guia: op19Senha.trim() || null,
+          caminho_arquivo: op19Caminho.trim(),
+          nome_arquivo: op19Caminho.trim().split(/[\\/]/).pop()
+        });
+      } else if (selectedConvenio === '6' && ['21', 'op21_anexar_recurso_glosa'].includes(finalRotina)) {
+        const protocolo = opProtocolo.trim();
+        if (!protocolo) { alert("Informe o Protocolo (capa) do recurso de glosa."); return; }
+        if (!op21Caminho.trim()) { alert("Informe o caminho local do PDF."); return; }
+        finalParams = JSON.stringify({
+          protocolo,
+          caminho_arquivo: op21Caminho.trim(),
+          nome_arquivo: op21Caminho.trim().split(/[\\/]/).pop()
+        });
+      } else if (selectedConvenio === '6' && ['20', 'op20', 'op20_validar_codigo_beneficiario'].includes(finalRotina)) {
+        finalParams = JSON.stringify({
+          modo: op20Modo,
+          apenas_sem_codigo: op20ApenasSemCodigo,
+          confirmar_pesquisar: op20ConfirmarPesquisar
+        });
       } else if (selectedConvenio === '100' && ['op6_baixarFaturados'].includes(finalRotina)) {
         if (!op6EvDataInicial || !op6EvDataFinal) {
           alert("Por favor, preencha as datas Inicial e Final.");
@@ -558,6 +712,19 @@ export default function Importacoes() {
           data_fim: dtFimFormatted,
           guia: op4GoiGuia || ''
         });
+      } else if (selectedConvenio === '9' && AMIL_OP1_ROTINAS.includes(finalRotina)) {
+        // AMIL OP1 — precedência de filtros (D6): senha > carteirinha > datas
+        // (se a senha for informada, o backend despreza o intervalo de datas).
+        // Datas em ISO YYYY-MM-DD: o backend AMIL espera ISO, sem conversão DD/MM/YYYY.
+        const amilParams = {};
+        if (amilSenha.trim()) amilParams.senha = amilSenha.trim();
+        if (amilCarteirinha.trim()) amilParams.carteirinha = amilCarteirinha.trim();
+        if (amilDataIni) amilParams.data_ini = amilDataIni;
+        if (amilDataFim) amilParams.data_fim = amilDataFim;
+
+        if (Object.keys(amilParams).length > 0) {
+          finalParams = JSON.stringify(amilParams);
+        }
       }
 
       if (importType === 'temp') {
@@ -605,6 +772,7 @@ export default function Importacoes() {
       setSelectedCarteirinhas([]);
       setTargetGuiasStr('');
       fetchJobs();
+      setPollInterval(5000); // Jobs recém-criados: acelera o poll imediatamente em vez de esperar o próximo ciclo de 30s
 
       if (importType === 'temp') {
         document.getElementById('temp-carteirinha').value = '';
@@ -1118,6 +1286,138 @@ export default function Importacoes() {
             </>
           )}
 
+          {selectedConvenio === '6' && ['19', 'op19_anexar_arquivo_guia'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Protocolo (capa) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 903505"
+                  value={opProtocolo}
+                  onChange={e => setOpProtocolo(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Guia (8 dígitos) *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 24768401"
+                  value={op19Guia}
+                  onChange={e => setOp19Guia(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Senha (opcional)</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="11 dígitos do nome do arquivo"
+                  value={op19Senha}
+                  onChange={e => setOp19Senha(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Caminho do PDF *</label>
+                <Input
+                  type="text"
+                  placeholder="C:\anexos\rhaviluizgoncalvesdacruz24768401331.pdf"
+                  value={op19Caminho}
+                  onChange={e => setOp19Caminho(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  1 job por arquivo. Para anexar vários PDFs de uma vez, use o modal <span className="font-bold">Anexos</span> do lote em
+                  Faturamento → Lotes - Convênios (analisa os nomes e cria os jobs).
+                </div>
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['21', 'op21_anexar_recurso_glosa'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Protocolo do Recurso *</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 895854"
+                  value={opProtocolo}
+                  onChange={e => setOpProtocolo(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <div className="md:col-span-8">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Caminho do PDF *</label>
+                <Input
+                  type="text"
+                  placeholder="C:\\recursos\\abraaopereiracarvalho-24533543382.pdf"
+                  value={op21Caminho}
+                  onChange={e => setOp21Caminho(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Anexa 1 arquivo PDF diretamente ao protocolo do recurso de glosa. Para anexar vários arquivos ou uma pasta inteira, use o botão <span className="font-bold">Anexos</span> na tela de Recurso de Glosa.
+                </div>
+              </div>
+            </>
+          )}
+
+          {selectedConvenio === '6' && ['20', 'op20', 'op20_validar_codigo_beneficiario'].includes(importRotina) && (
+            <>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Modo de Validação</label>
+                <Select
+                  value={op20Modo}
+                  onChange={e => setOp20Modo(e.target.value)}
+                >
+                  <option value="validar_e_atualizar">Validar e Atualizar na Base</option>
+                  <option value="somente_validar">Somente Validar (Auditoria)</option>
+                </Select>
+              </div>
+              <div className="md:col-span-4 flex flex-col justify-center gap-2 pt-2">
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={op20ApenasSemCodigo}
+                    onChange={e => setOp20ApenasSemCodigo(e.target.checked)}
+                    className="rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary"
+                  />
+                  Apenas carteirinhas sem Código Beneficiário preenchido
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={op20ConfirmarPesquisar}
+                    onChange={e => setOp20ConfirmarPesquisar(e.target.checked)}
+                    className="rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary"
+                  />
+                  Forçar confirmação clicando em Pesquisar (L3) em todas
+                </label>
+              </div>
+              <div className="md:col-span-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleOpenOp20Modal}
+                  className="w-full h-[42px]"
+                >
+                  <ShieldCheck size={16} /> Auditoria / Duplicados
+                </Button>
+              </div>
+              <div className="md:col-span-12">
+                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  Consulta cada carteirinha do seu usuário no portal IPASGO (<span className="font-mono">LocalizarProcedimentos</span>),
+                  resolve múltiplas opções comparando a carteirinha enviada e confirmação via requisição <span className="font-mono">Pesquisar</span>,
+                  e atualiza <span className="font-mono font-bold">codigo_beneficiario</span> preservando o formato exato (ex.: <span className="font-mono">040473-0</span>).
+                  Selecione <strong>Tipo de Importação = Todos</strong> para validar toda a sua base em lotes automáticos.
+                </div>
+              </div>
+            </>
+          )}
+
           {selectedConvenio === '6' && ['10', 'op10_recurso_glosa'].includes(importRotina) && (
             <>
               <div className="md:col-span-3">
@@ -1383,6 +1683,45 @@ export default function Importacoes() {
                   placeholder="Ex: 70138883"
                   value={op4GoiGuia}
                   onChange={e => setOp4GoiGuia(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {isAmilOp1Consulta && (
+            <>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Início</label>
+                <Input
+                  type="date"
+                  value={amilDataIni}
+                  onChange={e => setAmilDataIni(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Data Fim</label>
+                <Input
+                  type="date"
+                  value={amilDataFim}
+                  onChange={e => setAmilDataFim(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Senha de Autorização</label>
+                <Input
+                  type="text"
+                  placeholder="Se informada, o intervalo de datas é ignorado"
+                  value={amilSenha}
+                  onChange={e => setAmilSenha(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Carteirinha</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 123456789"
+                  value={amilCarteirinha}
+                  onChange={e => setAmilCarteirinha(e.target.value)}
                 />
               </div>
             </>
@@ -1849,6 +2188,252 @@ export default function Importacoes() {
                 </tbody>
               </table>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal OP20 — Auditoria de Código Beneficiário e Duplicados (Multi-Tenant por user_id) */}
+      {op20ModalOpen && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-6xl w-full max-h-[90vh] flex flex-col pt-4 px-6 pb-6">
+            <div className="flex justify-between items-center mb-4 border-b border-border pb-3">
+              <div>
+                <h3 className="text-xl font-bold text-text-primary">
+                  OP20 — Validação de Código Beneficiário (IPASGO)
+                </h3>
+                <span className="text-xs text-text-secondary">
+                  Dados isolados para a base de carteirinhas do seu usuário ({username})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => fetchOp20Dados()}>
+                  <RefreshCcw size={14} className={op20LoadingAudit ? 'animate-spin' : ''} /> Atualizar
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handleExportOp20Csv}>
+                  <Download size={14} /> Exportar CSV
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setOp20ModalOpen(false)}
+                  className="text-text-secondary hover:text-text-primary ml-2"
+                >
+                  <XCircle size={24} />
+                </button>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setOp20Tab('auditoria')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  op20Tab === 'auditoria'
+                    ? 'bg-primary text-white'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                Validados ({op20Auditoria.length}{op20TotalBase ? ` de ${op20TotalBase} na base` : ''})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOp20Tab('duplicados')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  op20Tab === 'duplicados'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-slate-800 text-amber-400 hover:bg-slate-700'
+                }`}
+              >
+                Códigos Duplicados na Base ({op20Duplicados.length})
+              </button>
+
+              {op20Tab === 'auditoria' && (
+                <div className="ml-auto flex items-center gap-3">
+                  <select
+                    value={op20StatusFilter}
+                    onChange={e => {
+                      setOp20StatusFilter(e.target.value);
+                      fetchOp20Dados(e.target.value, op20ApenasDivergentes);
+                    }}
+                    className="h-8 bg-slate-800 border border-slate-700 rounded-lg px-2 text-xs text-slate-200"
+                  >
+                    <option value="">Todos os Status</option>
+                    <option value="OK">OK</option>
+                    <option value="MULTIPLOS">MULTIPLOS</option>
+                    <option value="NAO_ENCONTRADA">NAO_ENCONTRADA</option>
+                    <option value="SEM_CORRESPONDENCIA">SEM_CORRESPONDENCIA</option>
+                    <option value="CONFLITO">CONFLITO</option>
+                    <option value="ERRO">ERRO</option>
+                  </select>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={op20ApenasDivergentes}
+                      onChange={e => {
+                        setOp20ApenasDivergentes(e.target.checked);
+                        fetchOp20Dados(op20StatusFilter, e.target.checked);
+                      }}
+                    />
+                    Apenas divergentes
+                  </label>
+                  {op20SelectedAuditIds.length > 0 && (
+                    <Button size="sm" onClick={() => handleAplicarOp20Selecionados()}>
+                      Aplicar Selecionados ({op20SelectedAuditIds.length})
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {op20Tab === 'auditoria' ? (
+              <div className="flex-1 overflow-y-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-slate-900/90 sticky top-0 uppercase text-text-secondary">
+                    <tr>
+                      <th className="px-3 py-2 border-b border-border">
+                        <input
+                          type="checkbox"
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setOp20SelectedAuditIds(
+                                op20Auditoria.filter(r => r.codigo_portal && !r.aplicado).map(r => r.id)
+                              );
+                            } else {
+                              setOp20SelectedAuditIds([]);
+                            }
+                          }}
+                        />
+                      </th>
+                      <th className="px-3 py-2 border-b border-border">Carteirinha</th>
+                      <th className="px-3 py-2 border-b border-border">Paciente</th>
+                      <th className="px-3 py-2 border-b border-border">Cód. Anterior</th>
+                      <th className="px-3 py-2 border-b border-border">Cód. Portal</th>
+                      <th className="px-3 py-2 border-b border-border">Título / Opções no Portal</th>
+                      <th className="px-3 py-2 border-b border-border">Status</th>
+                      <th className="px-3 py-2 border-b border-border">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {op20Auditoria.map(r => {
+                      const divergente = (r.codigo_anterior || '') !== (r.codigo_portal || '');
+                      return (
+                        <tr key={r.id} className="hover:bg-slate-800/40">
+                          <td className="px-3 py-2">
+                            {r.codigo_portal && !r.aplicado && (
+                              <input
+                                type="checkbox"
+                                checked={op20SelectedAuditIds.includes(r.id)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setOp20SelectedAuditIds([...op20SelectedAuditIds, r.id]);
+                                  } else {
+                                    setOp20SelectedAuditIds(op20SelectedAuditIds.filter(id => id !== r.id));
+                                  }
+                                }}
+                              />
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-text-primary">{r.carteirinha || '-'}</td>
+                          <td className="px-3 py-2 text-text-secondary">{r.paciente || '-'}</td>
+                          <td className="px-3 py-2 font-mono text-slate-400">{r.codigo_anterior || <span className="italic text-slate-600">vazio</span>}</td>
+                          <td className={`px-3 py-2 font-mono font-bold ${divergente ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            {r.codigo_portal || '-'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 max-w-md">
+                            <div>{r.titulo || '-'}</div>
+                            {Array.isArray(r.opcoes) && r.opcoes.length > 1 && (
+                              <div className="text-[11px] text-amber-300 mt-1 space-y-0.5">
+                                {r.opcoes.map((op, i) => (
+                                  <div key={i} className="font-mono">
+                                    [{op.valor}] {op.titulo}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {r.erro && <div className="text-[11px] text-red-400 mt-0.5">{r.erro}</div>}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge
+                              variant={
+                                r.status === 'OK'
+                                  ? 'success'
+                                  : r.status === 'MULTIPLOS'
+                                  ? 'warning'
+                                  : 'error'
+                              }
+                            >
+                              {r.status}
+                            </Badge>
+                            {r.aplicado && (
+                              <span className="ml-1.5 text-[10px] text-emerald-400 font-semibold">✓ Aplicado</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {r.codigo_portal && !r.aplicado && (
+                              <button
+                                type="button"
+                                onClick={() => handleAplicarOp20Selecionados([r.id])}
+                                className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-semibold"
+                              >
+                                Aplicar
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {op20Auditoria.length === 0 && (
+                      <tr>
+                        <td colSpan="8" className="px-4 py-8 text-center text-text-secondary">
+                          Nenhum registro de validação encontrado. Crie um job da OP20 para validar suas carteirinhas.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-3">
+                {op20Duplicados.map(grupo => (
+                  <div
+                    key={grupo.codigo_beneficiario}
+                    className="bg-slate-900/60 border border-amber-500/30 rounded-lg p-3"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-amber-400 font-mono">
+                        Código Beneficiário: {grupo.codigo_beneficiario}
+                      </span>
+                      <Badge variant="warning">{grupo.quantidade} carteirinhas com o mesmo código</Badge>
+                    </div>
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="py-1 px-2">ID</th>
+                          <th className="py-1 px-2">Carteirinha</th>
+                          <th className="py-1 px-2">Paciente</th>
+                          <th className="py-1 px-2">Status Validação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {grupo.carteirinhas.map(c => (
+                          <tr key={c.id}>
+                            <td className="py-1.5 px-2 font-mono text-slate-400">#{c.id}</td>
+                            <td className="py-1.5 px-2 font-mono text-slate-200">{c.carteirinha}</td>
+                            <td className="py-1.5 px-2 text-slate-200">{c.paciente}</td>
+                            <td className="py-1.5 px-2 text-slate-400">{c.codigo_benef_status || 'Não validado'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+                {op20Duplicados.length === 0 && (
+                  <div className="py-8 text-center text-emerald-400 text-sm">
+                    Nenhum codigo_beneficiario duplicado encontrado entre as carteirinhas do seu usuário.
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
         </div>
       )}

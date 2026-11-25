@@ -175,6 +175,7 @@ export default function useProtocoloLote() {
             window.URL.revokeObjectURL(url);
         } catch (e) {
             console.error('Download error:', e);
+            setError('Falha ao baixar o arquivo. Tente novamente.');
         }
     }, []);
 
@@ -196,6 +197,10 @@ export default function useProtocoloLote() {
             return totalParts;
         } catch (e) {
             console.error('ZIP download error:', e);
+            setError(e?.code === 'ECONNABORTED'
+                ? 'Tempo esgotado ao baixar o ZIP. Tente novamente.'
+                : 'Falha ao baixar o ZIP do lote. Tente novamente.');
+            throw e; // deixa o chamador (ex.: sequência de parts) interromper
         }
     }, [activeLoteId]);
 

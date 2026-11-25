@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
-import { Layers, Plus, X, Search, RefreshCw, XCircle, CheckCircle, HelpCircle, Download, ToggleLeft, ToggleRight, Calendar, Send } from 'lucide-react';
+import { Layers, Plus, X, Search, RefreshCw, XCircle, CheckCircle, HelpCircle, Download, ToggleLeft, ToggleRight, Calendar, Send, Paperclip, FileUp, Clock, AlertCircle, AlertTriangle, Activity } from 'lucide-react';
 
 export default function GestaoLotes() {
     const [lotes, setLotes] = useState([]);
@@ -26,6 +26,8 @@ export default function GestaoLotes() {
     const [filtroDetalhe, setFiltroDetalhe] = useState('');
     const [filtroBeneficiario, setFiltroBeneficiario] = useState('');
     const [filtroStatusConf, setFiltroStatusConf] = useState('');
+    const [filtroAnexo, setFiltroAnexo] = useState('');
+    const [filtroConciliacao, setFiltroConciliacao] = useState('');
     const [conferindoTodos, setConferindoTodos] = useState(false);
 
     // Ordenação de itens do lote
@@ -39,6 +41,20 @@ export default function GestaoLotes() {
     // Protocolo (capa) do lote no novo portal ConferenciaFaturamento (IPASGO)
     const [protocoloEdit, setProtocoloEdit] = useState({});
     const [savingProtocolo, setSavingProtocolo] = useState(null);
+
+    // Anexos por guia (OP19 — ConferenciaFaturamento IPASGO)
+    const [showAnexosModal, setShowAnexosModal] = useState(false);
+    const [anexosLote, setAnexosLote] = useState(null);
+    const [anexosTexto, setAnexosTexto] = useState('');
+    const [anexosPreview, setAnexosPreview] = useState(null);
+    const [anexosResultado, setAnexosResultado] = useState(null);
+    const [analisandoAnexos, setAnalisandoAnexos] = useState(false);
+    const [criandoAnexos, setCriandoAnexos] = useState(false);
+    const [anexosStatus, setAnexosStatus] = useState(null);
+    const [loadingAnexosStatus, setLoadingAnexosStatus] = useState(false);
+    const [reprocessandoAnexos, setReprocessandoAnexos] = useState(false);
+    const [abortandoAnexos, setAbortandoAnexos] = useState(false);
+    const [anexosTab, setAnexosTab] = useState('monitor'); // 'monitor' | 'novo'
 
     const pollRef = useRef(null);
 
@@ -173,6 +189,8 @@ export default function GestaoLotes() {
         setFiltroDetalhe('');
         setFiltroBeneficiario('');
         setFiltroStatusConf('');
+        setFiltroAnexo('');
+        setFiltroConciliacao('');
         try {
             const res = await api.get(`/lotes/${lote.id_lote}/faturamentos?limit=10000`);
             setItensLote(res.data.data);
@@ -195,7 +213,14 @@ export default function GestaoLotes() {
             : item.StatusConferencia?.toString();
         const matchStatusConf = filtroStatusConf === ''
             || (filtroStatusConf === 'I' ? item.status_conferencia === 'I' : statusComoInt === filtroStatusConf);
-        return matchGuia && matchDetalhe && matchBenef && matchStatusConf;
+        const matchAnexo = filtroAnexo === ''
+            || (filtroAnexo === 'com' ? Boolean(item.tem_anexo) : !item.tem_anexo);
+        // Filtro de conciliação: mesmo critério do badge e do card "Conciliados"
+        const matchConciliacao = filtroConciliacao === ''
+            || (filtroConciliacao === 'sim'
+                ? item.StatusConciliacao?.toLowerCase() === 'conciliado'
+                : item.StatusConciliacao?.toLowerCase() !== 'conciliado');
+        return matchGuia && matchDetalhe && matchBenef && matchStatusConf && matchAnexo && matchConciliacao;
     });
 
     const handleSort = (field) => {
@@ -222,6 +247,9 @@ export default function GestaoLotes() {
         } else if (sortField === 'conciliacao') {
             valA = a.StatusConciliacao || '';
             valB = b.StatusConciliacao || '';
+        } else if (sortField === 'anexo') {
+            valA = a.tem_anexo ? 1 : 0;
+            valB = b.tem_anexo ? 1 : 0;
         }
 
         if (typeof valA === 'string') {
@@ -250,7 +278,7 @@ export default function GestaoLotes() {
             if (item.status_conferencia === 'R') return 'Recusado';
             return item.StatusConferencia == 67 ? 'Conferido' : item.StatusConferencia == 78 ? 'Não Conferido' : item.StatusConferencia == 82 ? 'Removido' : item.StatusConferencia;
         };
-        const headers = ['Detalhe ID', 'Guia', 'Beneficiário', 'Data Realização', 'Valor', 'Status Conf.', 'Conciliação'];
+        const headers = ['Detalhe ID', 'Guia', 'Beneficiário', 'Data Realização', 'Valor', 'Status Conf.', 'Conciliação', 'Anexo'];
         const csvContent = [headers.join(';')].concat(filteredItens.map(item => [
             item.detalheId,
             item.Guia,
@@ -258,7 +286,8 @@ export default function GestaoLotes() {
             item.dataRealizacao,
             item.ValorProcedimento || 0,
             statusLabel(item),
-            item.StatusConciliacao || ''
+            item.StatusConciliacao || '',
+            item.tem_anexo ? 'Sim' : 'Não'
         ].join(';'))).join('\n');
         const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -357,6 +386,122 @@ export default function GestaoLotes() {
         }
     };
 
+    // ── Anexos por guia (OP19): o PDF é nomeado ...<senha11>.pdf; a guia são os
+    // 8 primeiros dígitos da senha. O backend valida e cria 1 job por arquivo.
+    const carregarStatusAnexos = async (loteId, silent = false) => {
+        if (!silent) setLoadingAnexosStatus(true);
+        try {
+            const res = await api.get(`/lotes/${loteId}/anexos/status`);
+            setAnexosStatus(res.data);
+            return res.data;
+        } catch (e) {
+            if (!silent) console.error("Erro ao carregar status dos anexos:", e);
+            return null;
+        } finally {
+            if (!silent) setLoadingAnexosStatus(false);
+        }
+    };
+
+    const handleAbrirAnexos = async (lote) => {
+        setAnexosLote(lote);
+        setAnexosTexto('');
+        setAnexosPreview(null);
+        setAnexosResultado(null);
+        setAnexosStatus(null);
+        setShowAnexosModal(true);
+        const data = await carregarStatusAnexos(lote.id_lote);
+        if (data && data.total > 0) {
+            setAnexosTab('monitor');
+        } else {
+            setAnexosTab('novo');
+        }
+    };
+
+    // Polling em tempo real enquanto o modal de anexos estiver aberto e houver jobs na fila
+    useEffect(() => {
+        if (!showAnexosModal || !anexosLote) return;
+        const interval = setInterval(async () => {
+            await carregarStatusAnexos(anexosLote.id_lote, true);
+        }, 4000);
+        return () => clearInterval(interval);
+    }, [showAnexosModal, anexosLote]);
+
+    const handleAnalisarAnexos = async () => {
+        const caminhos = anexosTexto.split('\n').map(c => c.trim()).filter(Boolean);
+        if (caminhos.length === 0) {
+            alert('Informe ao menos um caminho de arquivo (um por linha).');
+            return;
+        }
+        setAnalisandoAnexos(true);
+        setAnexosResultado(null);
+        try {
+            const res = await api.post(`/lotes/${anexosLote.id_lote}/anexos/analisar`, { caminhos });
+            setAnexosPreview(res.data);
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Erro ao analisar caminhos.');
+        } finally {
+            setAnalisandoAnexos(false);
+        }
+    };
+
+    const handleCriarAnexos = async () => {
+        const caminhos = (anexosPreview?.data || []).filter(d => d.valido).map(d => d.caminho);
+        if (caminhos.length === 0) {
+            alert('Nenhum caminho válido para criar jobs. Use "Analisar" primeiro.');
+            return;
+        }
+        if (!window.confirm(`Criar ${caminhos.length} job(s) de upload de anexo (OP19)?`)) return;
+        setCriandoAnexos(true);
+        try {
+            const res = await api.post(`/lotes/${anexosLote.id_lote}/anexos`, { caminhos });
+            setAnexosResultado(res.data);
+            setAnexosPreview(null);
+            setAnexosTexto('');
+            setAnexosTab('monitor');
+            await carregarStatusAnexos(anexosLote.id_lote);
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Erro ao criar jobs de anexo.');
+        } finally {
+            setCriandoAnexos(false);
+        }
+    };
+
+    const handleReprocessarAnexos = async (jobIds = null) => {
+        if (!anexosLote) return;
+        const msg = jobIds
+            ? `Reenviar ${jobIds.length} job(s) de anexo para reprocessamento?`
+            : `Reenviar todos os anexos pendentes/abortados deste lote para reprocessamento?`;
+        if (!window.confirm(msg)) return;
+
+        setReprocessandoAnexos(true);
+        try {
+            const payload = jobIds ? { job_ids: jobIds } : {};
+            const res = await api.post(`/lotes/${anexosLote.id_lote}/anexos/reprocessar`, payload);
+            alert(res.data?.message || "Jobs reenviados para a fila de reprocessamento!");
+            await carregarStatusAnexos(anexosLote.id_lote);
+        } catch (e) {
+            alert(e.response?.data?.detail || "Erro ao reprocessar anexos.");
+        } finally {
+            setReprocessandoAnexos(false);
+        }
+    };
+
+    const handleAbortarAnexos = async () => {
+        if (!anexosLote) return;
+        if (!window.confirm("Deseja abortar imediatamente a fila de envio de anexos deste lote?\n\nOs arquivos ficarão sinalizados como pendentes para reprocessamento posterior.")) return;
+
+        setAbortandoAnexos(true);
+        try {
+            const res = await api.post(`/lotes/${anexosLote.id_lote}/anexos/abortar`);
+            alert(res.data?.message || "Fila de envio de anexos abortada.");
+            await carregarStatusAnexos(anexosLote.id_lote);
+        } catch (e) {
+            alert(e.response?.data?.detail || "Erro ao abortar fila de anexos.");
+        } finally {
+            setAbortandoAnexos(false);
+        }
+    };
+
     // Sincronização de UM lote (ícone Sincronizar): cria o job correspondente
     // ao convênio (rotina_sync da strategy — ex. Unimed=4, IPASGO=6), com os
     // parâmetros DAQUELE lote. Convênios sem rotina de sincronização ficam com
@@ -421,12 +566,14 @@ export default function GestaoLotes() {
     const handleConferirTodos = async () => {
         // Inaptos (sem data de realização) ficam de fora da conferência
         const itensPendentes = filteredItens.filter(i => i.StatusConferencia !== 67 && i.status_conferencia !== 'I');
+        const inaptosIgnorados = filteredItens.filter(i => i.status_conferencia === 'I').length;
         if (itensPendentes.length === 0) {
             alert('Todos os itens elegíveis já estão conferidos.');
             return;
         }
         const confirmado = window.confirm(
             `Confirmar "Conferido" para ${itensPendentes.length} item(ns)?\n` +
+            (inaptosIgnorados > 0 ? `${inaptosIgnorados} item(ns) Inapto(s) serão ignorados (sem job).\n` : '') +
             (autoEnvio ? 'Jobs de conferência (OP18) serão criados automaticamente para cada item.' : 'Apenas atualiza o status local (ative Envio Automático para criar Jobs OP18).')
         );
         if (!confirmado) return;
@@ -448,7 +595,9 @@ export default function GestaoLotes() {
             }
         }
         setConferindoTodos(false);
-        alert(`Concluído! ${sucessos} item(ns) conferido(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}.${autoEnvio ? '\nJobs de conferência (OP18) criados para cada item processado.' : ''}`);
+        alert(`Concluído! ${sucessos} item(ns) conferido(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}.` +
+            (inaptosIgnorados > 0 ? `\n${inaptosIgnorados} Inapto(s) ignorado(s) — sem job criado.` : '') +
+            (autoEnvio ? '\nJobs de conferência (OP18) criados para cada item processado.' : ''));
     };
 
     return (
@@ -595,6 +744,18 @@ export default function GestaoLotes() {
                                         >
                                             <RefreshCw size={15} />
                                         </button>
+                                        {formConfig?.requer_protocolo && (
+                                            <button
+                                                onClick={() => handleAbrirAnexos(lote)}
+                                                disabled={!lote.protocolo || ['Cancelado', 'Cancelando'].includes(lote.status)}
+                                                className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                                title={lote.protocolo
+                                                    ? `Anexar PDFs por guia (OP19) — arquivo nomeado com a senha da guia (…senha11.pdf)`
+                                                    : 'Anexos — grave o protocolo do lote primeiro'}
+                                            >
+                                                <Paperclip size={14} /> Anexos
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => handleVerItens(lote)}
                                             className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs transition-colors flex items-center gap-1"
@@ -729,16 +890,16 @@ export default function GestaoLotes() {
                                 </button>
                                 <button
                                     onClick={handleConferirTodos}
-                                    disabled={conferindoTodos || filteredItens.filter(i => i.StatusConferencia !== 67).length === 0}
+                                    disabled={conferindoTodos || filteredItens.filter(i => i.StatusConferencia !== 67 && i.status_conferencia !== 'I').length === 0}
                                     className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 rounded border border-emerald-600/30 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={`Marcar todos os itens visíveis como Conferido${autoEnvio ? ' e criar Jobs OP7' : ''}`}
+                                    title={`Marcar todos os itens visíveis como Conferido (Inaptos ficam de fora)${autoEnvio ? ' e criar Jobs OP18' : ''}`}
                                 >
                                     {conferindoTodos ? (
                                         <RefreshCw size={14} className="animate-spin" />
                                     ) : (
                                         <CheckCircle size={14} />
                                     )}
-                                    {conferindoTodos ? 'Conferindo...' : `Conferir todos (${filteredItens.filter(i => i.StatusConferencia !== 67).length})`}
+                                    {conferindoTodos ? 'Conferindo...' : `Conferir todos (${filteredItens.filter(i => i.StatusConferencia !== 67 && i.status_conferencia !== 'I').length})`}
                                 </button>
                                 <button
                                     onClick={handleSyncItens}
@@ -823,6 +984,24 @@ export default function GestaoLotes() {
                                             <option value="82">Recusado / Removido</option>
                                             <option value="I">Inapto (sem data)</option>
                                         </select>
+                                        <select
+                                            className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 flex-1"
+                                            value={filtroAnexo}
+                                            onChange={e => setFiltroAnexo(e.target.value)}
+                                        >
+                                            <option value="">Todos (Anexo)</option>
+                                            <option value="com">Com Anexo</option>
+                                            <option value="sem">Sem Anexo</option>
+                                        </select>
+                                        <select
+                                            className="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 flex-1"
+                                            value={filtroConciliacao}
+                                            onChange={e => setFiltroConciliacao(e.target.value)}
+                                        >
+                                            <option value="">Conciliação: Todos</option>
+                                            <option value="sim">Conciliados</option>
+                                            <option value="nao">Não Conciliados</option>
+                                        </select>
                                     </div>
                                     
                                     {/* Tabela */}
@@ -878,13 +1057,24 @@ export default function GestaoLotes() {
                                                             </span>
                                                         </div>
                                                     </th>
+                                                    <th 
+                                                        className="px-4 py-3 cursor-pointer hover:bg-slate-700/50 select-none transition-colors"
+                                                        onClick={() => handleSort('anexo')}
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Anexo</span>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {sortField === 'anexo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                                            </span>
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-right">Ações</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-700/50">
                                                 {sortedItens.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan="9" className="px-4 py-8 text-center text-slate-500">
+                                                        <td colSpan="10" className="px-4 py-8 text-center text-slate-500">
                                                             Nenhum item encontrado.
                                                         </td>
                                                     </tr>
@@ -952,6 +1142,17 @@ export default function GestaoLotes() {
                                                                     {item.StatusConciliacao}
                                                                 </span>
                                                             </td>
+                                                            <td className="px-4 py-2">
+                                                                {item.tem_anexo ? (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" title="Guia possui anexo ativo no portal">
+                                                                        <Paperclip size={12} /> Com Anexo
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-500 border border-slate-700" title="Guia sem anexo no portal">
+                                                                        Sem Anexo
+                                                                    </span>
+                                                                )}
+                                                            </td>
                                                             <td className="px-4 py-2 text-right">
                                                                 <button
                                                                     onClick={() => handleSendOP7(item)}
@@ -969,6 +1170,367 @@ export default function GestaoLotes() {
                                         </table>
                                     </div>
                                 </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Anexos (OP19 — upload de PDF por guia com monitor e reprocessamento) */}
+            {showAnexosModal && anexosLote && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-700 flex items-center justify-between bg-slate-850">
+                            <div>
+                                <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
+                                    <Paperclip size={18} className="text-amber-400" />
+                                    Anexar Arquivos às Guias — Lote #{anexosLote.numero_lote || anexosLote.id_lote}
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    Protocolo: <span className="font-mono text-slate-200 font-semibold">{anexosLote.protocolo}</span> • Prestador: {anexosLote.cod_prestador}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {/* Tab selector */}
+                                <div className="flex bg-slate-900 border border-slate-700 rounded-lg p-0.5 text-xs">
+                                    <button
+                                        onClick={() => setAnexosTab('monitor')}
+                                        className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+                                            anexosTab === 'monitor'
+                                                ? 'bg-primary text-white shadow-sm'
+                                                : 'text-slate-400 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <Activity size={13} />
+                                        Monitor de Envios
+                                        {anexosStatus?.total > 0 && (
+                                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                                                anexosTab === 'monitor' ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'
+                                            }`}>
+                                                {anexosStatus.total}
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => setAnexosTab('novo')}
+                                        className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+                                            anexosTab === 'novo'
+                                                ? 'bg-primary text-white shadow-sm'
+                                                : 'text-slate-400 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <Plus size={13} /> Nova Carga
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setShowAnexosModal(false)}
+                                    className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-700 rounded-lg transition-colors"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content Area */}
+                        <div className="p-5 overflow-auto flex-1 space-y-4">
+                            {anexosTab === 'monitor' ? (
+                                <>
+                                    {/* Dashboard Cards */}
+                                    <div className="grid grid-cols-4 gap-3">
+                                        <div className="bg-slate-900/70 border border-slate-700/60 rounded-xl p-3">
+                                            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Total Anexos</span>
+                                            <span className="text-xl font-bold text-slate-100 mt-1 block">
+                                                {anexosStatus?.total || 0}
+                                            </span>
+                                        </div>
+                                        <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-3">
+                                            <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider block flex items-center gap-1">
+                                                <CheckCircle size={12} /> Concluídos
+                                            </span>
+                                            <span className="text-xl font-bold text-emerald-300 mt-1 block">
+                                                {anexosStatus?.concluidos || 0}
+                                            </span>
+                                        </div>
+                                        <div className="bg-blue-950/30 border border-blue-500/20 rounded-xl p-3">
+                                            <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider block flex items-center gap-1">
+                                                {(anexosStatus?.processando || 0) > 0 ? <RefreshCw size={12} className="animate-spin text-blue-400" /> : <Clock size={12} />}
+                                                Em Fila / Envio
+                                            </span>
+                                            <span className="text-xl font-bold text-blue-300 mt-1 block">
+                                                {(anexosStatus?.pendentes || 0) + (anexosStatus?.processando || 0)}
+                                            </span>
+                                        </div>
+                                        <div className="bg-red-950/30 border border-red-500/20 rounded-xl p-3">
+                                            <span className="text-[11px] font-semibold text-red-400 uppercase tracking-wider block flex items-center gap-1">
+                                                <AlertCircle size={12} /> Pend. Reprocessamento
+                                            </span>
+                                            {/* o Reprocessar reenvia todos os status=error; abortados é subconjunto de erros */}
+                                            <span className="text-xl font-bold text-red-300 mt-1 block">
+                                                {anexosStatus?.erros || 0}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Alert Banner se houver bloqueio ou anexos abortados */}
+                                    {((anexosStatus?.abortados || 0) > 0 || (anexosStatus?.erros || 0) > 0 || anexosStatus?.bloqueio_detectado || anexosStatus?.sessao_rejeitada_detectada) && (
+                                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs text-amber-300">
+                                            <div className="flex items-start gap-2.5">
+                                                <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <div className="font-semibold text-amber-200">
+                                                        {anexosStatus?.bloqueio_detectado
+                                                            ? 'Bloqueio momentâneo do IPASGO detectado (403/429)!'
+                                                            : anexosStatus?.sessao_rejeitada_detectada
+                                                            ? 'Portal IPASGO rejeitando a sessão (401/500) — envio pausado.'
+                                                            : 'Envio abortado após limite de 3 tentativas.'}
+                                                    </div>
+                                                    <div className="text-[11px] text-amber-300/80 mt-0.5">
+                                                        {(anexosStatus?.abortados || anexosStatus?.erros)} anexo(s) pausados. O sistema <strong>reenvia automaticamente</strong> após uma breve espera; "Reprocessar" força o reenvio imediato.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => handleReprocessarAnexos()}
+                                                disabled={reprocessandoAnexos}
+                                                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 shadow-sm disabled:opacity-50"
+                                            >
+                                                <RefreshCw size={13} className={reprocessandoAnexos ? "animate-spin" : ""} />
+                                                Reprocessar Pendentes
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Actions Row */}
+                                    <div className="flex items-center justify-between pt-1">
+                                        <div className="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                                            <span>Arquivos do Lote ({anexosStatus?.itens?.length || 0})</span>
+                                            {loadingAnexosStatus && (
+                                                <span className="text-[10px] text-slate-500 flex items-center gap-1 font-normal">
+                                                    <RefreshCw size={10} className="animate-spin" /> Atualizando...
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {((anexosStatus?.pendentes || 0) > 0 || (anexosStatus?.processando || 0) > 0) && (
+                                                <button
+                                                    onClick={handleAbortarAnexos}
+                                                    disabled={abortandoAnexos}
+                                                    className="px-3 py-1.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                                                    title="Interrompe o envio dos jobs em fila para não insistir contra o portal bloqueado"
+                                                >
+                                                    <XCircle size={14} className="text-red-400" />
+                                                    {abortandoAnexos ? 'Abortando…' : 'Abortar Fila'}
+                                                </button>
+                                            )}
+                                            {((anexosStatus?.abortados || 0) > 0 || (anexosStatus?.erros || 0) > 0) && (
+                                                <button
+                                                    onClick={() => handleReprocessarAnexos()}
+                                                    disabled={reprocessandoAnexos}
+                                                    className="px-3 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                                                    title="Reenviar todos os anexos que falharam ou foram abortados"
+                                                >
+                                                    <RefreshCw size={13} className={reprocessandoAnexos ? "animate-spin" : ""} />
+                                                    {reprocessandoAnexos ? 'Reenviando…' : 'Reprocessar Todos'}
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => carregarStatusAnexos(anexosLote.id_lote)}
+                                                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 rounded-lg transition-colors"
+                                                title="Atualizar lista agora"
+                                            >
+                                                <RefreshCw size={14} className={loadingAnexosStatus ? "animate-spin" : ""} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Table of Jobs */}
+                                    <div className="border border-slate-700 rounded-xl overflow-hidden bg-slate-900/40">
+                                        {(!anexosStatus?.itens || anexosStatus.itens.length === 0) ? (
+                                            <div className="p-8 text-center text-slate-500 text-xs">
+                                                Nenhum anexo foi enviado ainda para este lote.
+                                                <div className="mt-2">
+                                                    <button
+                                                        onClick={() => setAnexosTab('novo')}
+                                                        className="text-primary hover:underline font-semibold"
+                                                    >
+                                                        Carregar pasta com PDFs agora →
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <table className="w-full text-xs">
+                                                <thead className="bg-slate-900/90 text-slate-400 uppercase text-[11px] font-semibold border-b border-slate-700/70">
+                                                    <tr>
+                                                        <th className="px-3.5 py-2.5 text-left">Arquivo</th>
+                                                        <th className="px-3.5 py-2.5 text-left">Guia</th>
+                                                        <th className="px-3.5 py-2.5 text-left">Senha</th>
+                                                        <th className="px-3.5 py-2.5 text-center">Tentativas</th>
+                                                        <th className="px-3.5 py-2.5 text-left">Status</th>
+                                                        <th className="px-3.5 py-2.5 text-left">Detalhe / Erro</th>
+                                                        <th className="px-3.5 py-2.5 text-right">Ação</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-800">
+                                                    {anexosStatus.itens.map((item) => (
+                                                        <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
+                                                            <td className="px-3.5 py-2.5 font-mono text-[11px] text-slate-200 break-all max-w-[200px]" title={item.caminho}>
+                                                                {item.arquivo}
+                                                            </td>
+                                                            <td className="px-3.5 py-2.5 font-mono text-slate-300">{item.guia || '—'}</td>
+                                                            <td className="px-3.5 py-2.5 font-mono text-slate-400">{item.senha || '—'}</td>
+                                                            <td className="px-3.5 py-2.5 text-center font-mono">
+                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                    item.attempts >= item.max_attempts
+                                                                        ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                                                        : item.attempts > 0
+                                                                        ? 'bg-amber-500/20 text-amber-300'
+                                                                        : 'text-slate-500'
+                                                                }`}>
+                                                                    {item.attempts}/{item.max_attempts}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                                                {item.status === 'success' ? (
+                                                                    <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold text-[11px]">
+                                                                        <CheckCircle size={12} /> Concluído
+                                                                    </span>
+                                                                ) : item.status === 'processing' || item.status === 'running' ? (
+                                                                    <span className="inline-flex items-center gap-1 text-blue-400 font-semibold text-[11px]">
+                                                                        <RefreshCw size={12} className="animate-spin text-blue-400" /> Enviando…
+                                                                    </span>
+                                                                ) : item.status === 'pending' ? (
+                                                                    <span className="inline-flex items-center gap-1 text-amber-400 font-medium text-[11px]">
+                                                                        <Clock size={12} /> Na Fila
+                                                                    </span>
+                                                                ) : item.is_abortado ? (
+                                                                    <span className="inline-flex items-center gap-1 text-red-400 font-semibold text-[11px]" title={item.error_message}>
+                                                                        <AlertCircle size={12} /> Abortado (Pendente)
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 text-red-400 font-medium text-[11px]" title={item.error_message}>
+                                                                        <XCircle size={12} /> Falhou
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-3.5 py-2.5 text-[11px] text-slate-400 max-w-[240px] truncate" title={item.error_message || ''}>
+                                                                {item.status === 'success' ? (
+                                                                    <span className="text-emerald-500/80">Enviado ao portal</span>
+                                                                ) : item.error_message && item.error_message.startsWith('[auto-retry') ? (
+                                                                    <span className="text-blue-400/80">Reenvio automático agendado</span>
+                                                                ) : item.error_message ? (
+                                                                    <span className="text-red-400/90">{item.error_message}</span>
+                                                                ) : (
+                                                                    <span className="text-slate-500 italic">Aguardando worker</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+                                                                {item.status !== 'success' && (
+                                                                    <button
+                                                                        onClick={() => handleReprocessarAnexos([item.id])}
+                                                                        disabled={reprocessandoAnexos}
+                                                                        className="p-1 px-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[11px] transition-colors inline-flex items-center gap-1"
+                                                                        title="Reprocessar este anexo"
+                                                                    >
+                                                                        <RefreshCw size={11} className={reprocessandoAnexos ? "animate-spin" : ""} />
+                                                                        Reprocessar
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                /* Nova Carga de Anexos */
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">
+                                            Pasta com os PDFs
+                                        </label>
+                                        <textarea
+                                            rows={3}
+                                            placeholder={'G:\\Meu Drive\\IPASGO-FATURAMENTO\\IPASGO-OUTUBRO\\IPASGO-10-OUTPUT\\teste'}
+                                            value={anexosTexto}
+                                            onChange={e => { setAnexosTexto(e.target.value); setAnexosPreview(null); setAnexosResultado(null); }}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 font-mono focus:outline-none focus:border-primary resize-y"
+                                        />
+                                        <p className="text-[11px] text-slate-500 mt-1">
+                                            Informe a pasta: todos os PDFs dela (sem subpastas) são analisados. A senha (11 dígitos) é lida do fim do nome do arquivo e a guia são os 8 primeiros dígitos. 1 job por PDF válido.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={handleAnalisarAnexos}
+                                            disabled={analisandoAnexos || criandoAnexos}
+                                            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                        >
+                                            {analisandoAnexos ? 'Analisando…' : 'Analisar'}
+                                        </button>
+                                        {anexosPreview && (
+                                            <button
+                                                onClick={handleCriarAnexos}
+                                                disabled={criandoAnexos || anexosPreview.validos === 0}
+                                                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                                            >
+                                                <FileUp size={14} />
+                                                {criandoAnexos ? 'Criando…' : `Criar ${anexosPreview.validos} job(s) (OP19)`}
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {anexosPreview && (
+                                        <div className="border border-slate-700 rounded-lg overflow-hidden">
+                                            <table className="w-full text-xs">
+                                                <thead className="bg-slate-900/80 text-slate-400 uppercase">
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-left">Arquivo</th>
+                                                        <th className="px-3 py-2 text-left">Senha</th>
+                                                        <th className="px-3 py-2 text-left">Guia</th>
+                                                        <th className="px-3 py-2 text-left">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-700/50">
+                                                    {(anexosPreview.data || []).map((d, i) => (
+                                                        <tr key={i} className="text-slate-300">
+                                                            <td className="px-3 py-2 font-mono text-[11px] break-all" title={d.caminho}>{d.arquivo}</td>
+                                                            <td className="px-3 py-2 font-mono">{d.senha || '—'}</td>
+                                                            <td className="px-3 py-2 font-mono">{d.guia || '—'}</td>
+                                                            <td className="px-3 py-2">
+                                                                {d.valido
+                                                                    ? <span className="text-emerald-400 font-semibold">Válido</span>
+                                                                    : <span className="text-red-400" title={d.motivo}>{d.motivo}</span>}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            <div className="px-3 py-2 bg-slate-900/60 text-[11px] text-slate-400">
+                                                {anexosPreview.validos} válido(s) de {(anexosPreview.data || []).length} PDF(s)
+                                                {anexosPreview.ignorados_nao_pdf > 0 ? ` • ${anexosPreview.ignorados_nao_pdf} item(ns) não-PDF/subpasta ignorado(s)` : ''}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {anexosResultado && (
+                                        <div className={`text-sm rounded-lg px-4 py-3 border ${anexosResultado.rejeitados?.length ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
+                                            <div className="font-semibold">
+                                                {anexosResultado.criados} job(s) de anexo criados (OP19).
+                                            </div>
+                                            {anexosResultado.rejeitados?.length > 0 && (
+                                                <ul className="mt-1 list-disc list-inside text-xs">
+                                                    {anexosResultado.rejeitados.map((r, i) => (
+                                                        <li key={i}>{r.arquivo}: {r.motivo}</li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </div>

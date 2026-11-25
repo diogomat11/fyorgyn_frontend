@@ -44,9 +44,12 @@ const protocoloApi = {
 
     /**
      * Download an individual processed file.
+     * timeout: 0 — o timeout global de 30s do axios aborta downloads de
+     * arquivos grandes antes de completarem (o ZIP de lotes grandes travava).
      */
     downloadFile: (arquivoId) => api.get(`/protocolo/arquivos/${arquivoId}/download`, {
         responseType: 'blob',
+        timeout: 0,
     }),
 
     /**
@@ -57,6 +60,7 @@ const protocoloApi = {
     downloadZip: (loteId, part = 1) => api.get(`/protocolo/lotes/${loteId}/download-zip`, {
         params: { part },
         responseType: 'blob',
+        timeout: 0,
     }),
 
     /**

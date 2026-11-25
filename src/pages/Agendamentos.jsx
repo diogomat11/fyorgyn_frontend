@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import Pagination from '../components/Pagination';
-import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Edit3, Shield, RefreshCw, Printer, Check, Info, AlertTriangle } from 'lucide-react';
+import { Search, Calendar, FileText, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, Filter, Trash2, Network, X, Play, Download, Upload, Edit3, Shield, RefreshCw, Printer, Check, Info, AlertTriangle } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
 // Design System components matching the app's aesthetic
@@ -189,6 +189,29 @@ export default function Agendamentos() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    };
+
+    const handleUploadCSV = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setLoading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+        if (filters.id_convenio) {
+            formData.append('id_convenio', filters.id_convenio);
+        }
+        try {
+            const res = await api.post('/agendamentos/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            alert(res.data?.message || 'Agendamentos importados com sucesso!');
+            loadData();
+        } catch (err) {
+            alert('Erro ao importar CSV: ' + (err.response?.data?.detail || err.message));
+        } finally {
+            setLoading(false);
+            e.target.value = null;
+        }
     };
 
     // Subscriptions for Batches
@@ -423,6 +446,11 @@ export default function Agendamentos() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
+                    <label className="cursor-pointer flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2.5 rounded-xl font-medium border border-slate-700 transition-colors">
+                        <Upload className="w-5 h-5 text-cyan-400" />
+                        Importar CSV
+                        <input type="file" accept=".csv,.txt" className="hidden" onChange={handleUploadCSV} disabled={loading} />
+                    </label>
                     <Button
                         onClick={exportToXLSX}
                         variant="outline"
